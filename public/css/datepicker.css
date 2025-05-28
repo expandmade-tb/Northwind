@@ -1,0 +1,77 @@
+.datepicker-calendar {
+  position: absolute;
+  background: white;
+  border: 1px solid #ccc;
+  padding: 10px;
+  z-index: 9999;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  display: none;
+  font-family: sans-serif;
+}
+
+.datepicker-nav {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 5px;
+}
+
+.datepicker-nav button {
+background: none;
+border: none;
+font-size: 16px;
+cursor: pointer;
+}
+
+.datepicker-weekdays {
+display: grid;
+grid-template-columns: repeat(7, 1fr);
+text-align: center;
+font-weight: bold;
+margin-bottom: 4px;
+}
+
+.datepicker-grid {
+display: grid;
+grid-template-columns: repeat(7, 1fr);
+gap: 4px;
+text-align: center;
+margin-bottom: 6px;
+}
+
+.datepicker-grid button {
+border: none;
+background: #f0f0f0;
+padding: 4px;
+cursor: pointer;
+}
+
+.datepicker-grid button:hover {
+background: #cce;
+}
+
+.datepicker-footer {
+text-align: center;
+}
+
+.datepicker-footer .today-btn {
+background: #007bff;
+color: white;
+padding: 4px 8px;
+border: none;
+cursor: pointer;
+border-radius: 3px;
+}
+
+.datepicker-footer .today-btn:hover {
+background: #0056b3;
+}
+
+.datepicker-grid button.selected {
+background-color: #007bff;
+color: white;
+}
+
+.datepicker-grid button.selected:hover {
+background-color: #0056b3;
+}
