@@ -4,7 +4,7 @@ namespace Formbuilder;
 
 /**
  * Forms for Model View Controllers
- * Version 2.13.0
+ * Version 2.13.1
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -953,7 +953,7 @@ class Formbuilder {
         if ( $this->submitted() )
             $checked_val = $post != $value ? '' : 'checked=""';
         else {
-            if ( array_key_exists($name, $this->prePOST) )
+            if ( array_key_exists($name, $this->prePOST??[]) )
                 $checked_val = $post != $value ? '' : 'checked=""';
             else
                 /* @phpstan-ignore-next-line (extract statement not recognized by phpstan */
