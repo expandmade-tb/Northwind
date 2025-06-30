@@ -10,9 +10,9 @@ class Resources extends CrudController {
 
     function __construct() {
         parent::__construct();
-        $this->html_compress = false;
-        
+       
         $this->crud = new DbCrud(new resources_model()); 
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_delete = '';
         $this->crud->limit = 15;
@@ -24,6 +24,6 @@ class Resources extends CrudController {
         $this->crud->setContstraints('ResourceId', 'RolesResources', 'ResourceId');
 
         $valuelist = implode(',', array_keys(Routes::$routes));
-        $this->crud->fieldType('Controller', 'select', $valuelist);
+        $this->crud->setFieldProperty('Controller', select: $valuelist);
     }
 }

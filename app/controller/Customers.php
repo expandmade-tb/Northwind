@@ -12,6 +12,7 @@ class Customers extends CrudController {
         $this->html_compress = false;
         
         $this->crud = new DbCrud(new customers_model(), );
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_delete = '';
         $this->crud->limit = 15;

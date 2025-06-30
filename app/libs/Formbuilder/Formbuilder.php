@@ -4,7 +4,7 @@ namespace Formbuilder;
 
 /**
  * Forms for Model View Controllers
- * Version 2.13.1
+ * Version 2.13.3
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -159,10 +159,11 @@ class Formbuilder {
     protected function get_rule (string $name) : array {
         $ruleset = [];
 
-        foreach ($this->rules as $key => $rule) {
-            if ( $rule->name == $name )
-                $ruleset[] = $rule->validate_function;
-        }
+        if ( !empty($this->rules) )
+            foreach ($this->rules as $key => $rule) {
+                if ( $rule->name == $name )
+                    $ruleset[] = $rule->validate_function;
+            }
 
         return $ruleset;
     }
@@ -529,13 +530,13 @@ class Formbuilder {
      * @param string $name the input field name
      * @param array $args one or more of the following arguments:
      * 
-     *| arg         | description 
-     *|:------------|:-----------------------------------------------
-     *| label       | label text for the input field 
-     *| placeholder | the input fields id      
-     *| string      | additional field attributes
-     *| value       | the input fields value 
-     *| id          | the input fields id      
+     *| arg                  | description 
+     *|:---------------------|:-----------------------------------------------
+     *| label?: string       | label text for the input field 
+     *| placeholder?: string | the input fields id      
+     *| string?: string      | additional field attributes
+     *| value?: string       | the input fields value 
+     *| id?: string          | the input fields id      
      *
      * @param string $oninput adds a js input event (mostly thought to implement a live search)
      * 

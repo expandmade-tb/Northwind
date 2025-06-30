@@ -11,6 +11,7 @@ class Regions extends CrudController {
         parent::__construct();
         
         $this->crud = new DbCrud(new regions_model());
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_search = '';
         $this->crud->grid_delete = '';

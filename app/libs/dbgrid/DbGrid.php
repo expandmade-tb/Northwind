@@ -2,7 +2,7 @@
 
 /**
  * Grid for database tables
- * Version 1.7.0
+ * Version 1.7.1
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -185,7 +185,7 @@ class DbGrid {
 
             foreach ($this->grid_fields as $field) {
                 $isSearchField = in_array($field, $this->search_fields??[], true);
-                $marker = $isSearchField ? '*' : '';
+                $marker = $isSearchField ? '&nbsp;<i class="bi bi-search"></i>' : '';
             
                 $align = $this->field_align[$field] ?? '';
                 $style = $align !== '' ? " style=\"text-align: $align\"" : '';
@@ -374,9 +374,9 @@ class DbGrid {
 
         if ( $min > $max_pages ) {
             $page = $min - 1;
-            $link = $uri . "/grid/1$query";
+            $link = $uri . "/grid/1{$query}";
             $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">First</a></li>';
-            $link = $uri . "/grid/$page";
+            $link = $uri . "/grid/{$page}{$query}";
             $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">Previous</a></li>&nbsp';
         }
 

@@ -4,151 +4,141 @@ namespace helper;
 
 /**
  * encode/decode method parameters in an MVC url as a single hex string
- * Version 1.0.2
+ * Version 2.0.1
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
 
-class UrlVars {
-    const CIPHERING = "AES-128-CTR";
-    const IV        = '3543ca5c5575842e';
-    const H_IDENT   = 'h__ident';
-    const H_VALID   = 'h__valid';
-
-    private array $vars = [];
-    private string $secret;
-    private string $header_ident='eae40352fa4e';
-    private int $header_valid=10;
-        
-    /**
-     * set header values
-     *
-     * @param string $ident header identification
-     * @param int $valid duration in seconds until the header is invalid
-     *
-     * @return $this
-     */
-    public function set_header (string $ident, int $valid) {
-        $this->header_ident = $ident;
-        $this->header_valid = $valid;
-        return $this;
-    }
-
-    /**
-     * gets the contents of a variable
-     *
-     * @param string $var name of the variable
-     * @param string $default default value if the variable isnt set
-     *
-     * @return string the value of the variable
-     */
-    public function get(string $var, string $default = null) : string {
-        return $this->vars[$var]??$default;
-    }
-    
-    /**
-     * sets the secret key to encrypt/decrypt the url vars
-     *
-     * @param string $secret the secret key
-     *
-     * @return $this
-     */
-    public function set_secret(string $secret) {
-        $this->secret = $secret;
-        return $this;
-    }
-    
-    /**
-     * encodes the url parameter(s)
-     *
-     * @param array $param the url parameter(s)
-     * @param bool $secure_header add a secure header
-     *
-     * @return mixed string | false
-     */
-    public function encode(array $param, bool $secure_header=false) {
-        // add a header to the array to encode
-        if ( $secure_header )
-            $this->vars = array_merge([UrlVars::H_IDENT=>$this->header_ident,UrlVars::H_VALID=>time() + $this->header_valid], $param);
-        else
-            $this->vars = $param;
-        
-        // encode as a json string
-        $jparam = json_encode($this->vars);
-
-        if ( $jparam === false )
-            return false;
-
-        if ( !empty($this->secret) ) {  // ssl encrypt if a secret was set and compress the string
-
-            $sparam = openssl_encrypt($jparam, UrlVars::CIPHERING, $this->secret, 0, UrlVars::IV);
-
-            if ( $sparam === false )
-                return false;
-
-            $cparam = gzdeflate($sparam, 9);
-        }
-        else // just compress the string
-            $cparam = gzdeflate($jparam, 9);
-
-        if ( $cparam === false )
-            return false;
-
-        // finally build the hex string
-        $hparam = bin2hex($cparam);
-        return $hparam; 
-    }
-        
-    /**
-     * decodes the url parameter(s)
-     *
-     * @param string $param the url parameter(s)
-     *
-     * @return mixed array | false
-     */
-    public function decode(string $param) {
-        // is this a valid hex string ?
-        if (strlen($param) % 2 || ! ctype_xdigit($param))
-            return false;
-
-        $hparam = hex2bin($param);
-
-        if ( $hparam === false )
-            return false;
-
-        $gparam = gzinflate($hparam);
-
-        if ( $gparam === false )
-            return false;
-
-        // decrypt the string if a secret was set
-        if ( !empty($this->secret) ) {
-            $sparam = openssl_decrypt($gparam, UrlVars::CIPHERING, $this->secret, 0, UrlVars::IV);
-
-            if ( $sparam === false )
-                return false;
-
-            $jparam = json_decode($sparam, true);
-        }
-        else
-            $jparam = json_decode($gparam, true);
-
-        if ( is_null($jparam) )
-            return false;
-            
-        // if there is an identifier set, check and remove it
-        if ( isset($jparam[UrlVars::H_IDENT]) && $jparam[UrlVars::H_IDENT] != $this->header_ident )
-            return false;
-        else
-            unset($jparam[UrlVars::H_IDENT]);
-
-        // if there is a time validation set, check and remove it
-        if ( isset($jparam[UrlVars::H_VALID]) && (time() > $jparam[UrlVars::H_VALID]) )
-            return false;
-        else
-            unset($jparam[UrlVars::H_VALID]);
-
-        $this->vars = $jparam;
-        return $jparam;
-    }
-}
+ class UrlVars {
+     const CIPHERING = "aes-256-gcm";
+     const IV_LENGTH = 12;
+     const TAG_LENGTH = 16;
+ 
+     const H_IDENT = 'i';  // Header identifier key
+     const H_VALID = 'v';  // Header expiry key
+ 
+     private array $vars = [];
+     private string $secret = '395bcc259092e178cd79';
+     private string $header_ident = 'eae40352fa4e';
+     private int $header_valid = 10;
+ 
+     /**
+      * Sets the identifier and validity duration for secure headers.
+      *
+      * @param string $ident Identifier string to validate encoded payloads.
+      * @param int $valid Validity duration in seconds (e.g. 86400 = 1 day).
+      * @return $this
+      */
+     public function set_header(string $ident, int $valid) {
+         $this->header_ident = $ident;
+         $this->header_valid = $valid;
+         return $this;
+     }
+ 
+     /**
+      * Gets a value from the decoded payload.
+      *
+      * @param string $var Key name in the decoded data.
+      * @param string|null $default Default value if key not found.
+      * @return string Value of the key or default.
+      */
+     public function get(string $var, ?string $default = null): string {
+         return $this->vars[$var] ?? $default;
+     }
+ 
+     /**
+      * Sets the shared secret used to encrypt and decrypt payloads.
+      *
+      * @param string $secret Secret encryption key (should be 32 bytes for AES-256).
+      * @return $this
+      */
+     public function set_secret(string $secret) {
+         $this->secret = $secret;
+         return $this;
+     }
+ 
+     /**
+      * Encodes parameters into a compact, encrypted, URL-safe string.
+      *
+      * @param array $param Associative array of parameters to encode.
+      * @param bool $secure_header Whether to include a time-limited header (identifier + expiry).
+      * @return string|false Base64url-encoded encrypted string, or false on failure.
+      */
+     public function encode(array $param, bool $secure_header = false): string|false {
+         if ($secure_header) {
+             $this->vars = array_merge([
+                 self::H_IDENT => $this->header_ident,
+                 self::H_VALID => time() + $this->header_valid
+             ], $param);
+         } else {
+             $this->vars = $param;
+         }
+ 
+         $plaintext = json_encode($this->vars);
+         if ($plaintext === false) return false;
+ 
+         $iv = random_bytes(self::IV_LENGTH);
+         $tag = '';
+ 
+         $ciphertext = openssl_encrypt(
+             $plaintext,
+             self::CIPHERING,
+             $this->secret,
+             OPENSSL_RAW_DATA,
+             $iv,
+             $tag,
+             '',
+             self::TAG_LENGTH
+         );
+ 
+         if ($ciphertext === false || empty($tag) ) return false;
+ 
+         $combined = $iv . $tag . $ciphertext;
+         return rtrim(strtr(base64_encode($combined), '+/', '-_'), '=');
+     }
+ 
+     /**
+      * Decodes a previously encoded string and validates headers if present.
+      *
+      * @param string $param The base64url-encoded encrypted string.
+      * @return array|false Associative array of decoded values, or false on failure.
+      */
+     public function decode(string $param): array|false {
+         $padded = str_pad(strtr($param, '-_', '+/'), strlen($param) % 4 === 0 ? strlen($param) : strlen($param) + 4 - strlen($param) % 4, '=', STR_PAD_RIGHT);
+         $binary = base64_decode($padded);
+         if ($binary == false) return false;
+ 
+         $iv = substr($binary, 0, self::IV_LENGTH);
+         $tag = substr($binary, self::IV_LENGTH, self::TAG_LENGTH);
+         $ciphertext = substr($binary, self::IV_LENGTH + self::TAG_LENGTH);
+ 
+         if (strlen($iv) !== self::IV_LENGTH || strlen($tag) !== self::TAG_LENGTH) return false;
+ 
+         $plaintext = openssl_decrypt(
+             $ciphertext,
+             self::CIPHERING,
+             $this->secret,
+             OPENSSL_RAW_DATA,
+             $iv,
+             $tag
+         );
+ 
+         if ($plaintext === false) return false;
+ 
+         $jparam = json_decode($plaintext, true);
+         if (!is_array($jparam)) return false;
+ 
+         // Validate identifier
+         if (isset($jparam[self::H_IDENT]) && $jparam[self::H_IDENT] !== $this->header_ident)
+             return false;
+         unset($jparam[self::H_IDENT]);
+ 
+         // Validate expiry
+         if (isset($jparam[self::H_VALID]) && time() > $jparam[self::H_VALID])
+             return false;
+         unset($jparam[self::H_VALID]);
+ 
+         $this->vars = $jparam;
+         return $jparam;
+     }
+ }

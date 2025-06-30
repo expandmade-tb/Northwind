@@ -2,7 +2,7 @@
 
 /**
  * CRUD for database tables
- * Version 1.23.0
+ * Version 1.26.1
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -11,7 +11,7 @@ namespace dbgrid;
 
 use database\DBTable;
 use Exception;
-use Formbuilder\Formbuilder;
+use InvalidArgumentException;
 use Formbuilder\StatelessCSRF;
 use helper\Helper;
 
@@ -34,38 +34,23 @@ class DbCrud {
     public bool $show_titles = true;
 
     protected DBTable $table;                       // database table we are using
+    protected FormHandler $formHandler;
     protected string $echo_data = '';               // data to be returned instead of echo
     protected array $field_titles;                  // titles / headers for fields
-    protected array $add_fields;                    // fields to show during form add action
-    protected array $edit_fields;                   // fields to show during form edit action
-    protected array $read_fields;                   // fields to show during form read action
+    protected array $field_types;                   // the field property / value pairs
     protected array $grid_fields;                   // fields to show in grid
     protected array $search_fields;                 // searchable fields
     protected array $callback_fields;               // fields to callback to format values
-    protected array $callback_rules;                // fields rules at form validation
-    protected array $readonly_fields;               // fields which are readonly on form
-    protected array $required_fields;               // fields which are required on form
-    protected array $field_types;                   // the field types to deal with
-    protected array $field_values;                  // the field initial values
-    protected array $field_placeholders;            // the field placeholders when editing form
-    protected array $field_onchange;                // adds an ajax call to field onchange event
-    protected mixed $callback_insert;               // replaces buildin insert
-    protected mixed $callback_update;               // replaces buildin update
-    protected mixed $callback_delete;               // replace buildin delete
     protected string $primaryKey;                   // for now just a single field which is pk
-    protected bool $encode_identifier = false;      // identifier will be base64 encoded  
     protected string $grid_info = '';               // shows an information at the top of the grid
     protected array $uri;                           // current uri split into its parts
-    protected array $datepicker;                    // fields with integrated date picker
-    private array $linked_table;                    // store the controller + method to link with a button in edit mode
-    private array $subform;                         // store the controller + method to handle a subform
-    private array $constraints;                     // stores a list of fields which do have depending tables ( parent -> child)
-    private array $rows;                            // grid layout for form
-    private mixed $callbackException;               // callback on exceptions
+    protected bool $encode_identifier = false;
+    protected mixed $callback_delete;
 
     public function __construct(DBTable $table) {
         $this->table = $table;
         $this->grid_title = $table->name();
+        $this->formHandler = new FormHandler($this);
 
         if ( count($this->table->primaryKey()) > 1 )
             throw new Exception("only single column primary keys supported");
@@ -78,33 +63,33 @@ class DbCrud {
         foreach (explode(',',$this->table->fieldlist()) as $key => $field ) {
             switch ($this->table->fields($field)['type']) {
                 case 'INTEGER':
-                    $this->fieldType($field, 'integer');
+                    $this->setFieldProperty($field, type: 'integer');
                     break;
                 case 'REAL':
-                    $this->fieldType($field, 'numeric');
+                    $this->setFieldProperty($field, type: 'numeric');
                     break;
                 case 'NUMERIC':
-                    $this->fieldType($field, 'numeric');
+                    $this->setFieldProperty($field, type: 'numeric');
                     break;
                 default:
-                    $this->fieldType($field, 'text');
+                    $this->setFieldProperty($field, type: 'text');
                     break;
            }
         }
     }
     
     public function addFields (string $fields) : DbCrud {
-        $this->add_fields = array_map('trim',explode(',', $fields));
+        $this->formHandler->addFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
     public function editFields (string $fields) : DbCrud {
-        $this->edit_fields = array_map('trim',explode(',', $fields));
+        $this->formHandler->editFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
     public function readFields (string $fields) : DbCrud {
-        $this->read_fields = array_map('trim',explode(',', $fields));
+        $this->formHandler->readFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
@@ -120,23 +105,26 @@ class DbCrud {
 
     public function readonlyFields (string $fields) : DbCrud {
         foreach (array_map('trim',explode(',', $fields)) as $key => $value)
-            $this->readonly_fields[$value] = $key;
+            $this->formHandler->readonlyFields[$value] = $key;
 
         return $this;
     }
 
     public function requiredFields (string $fields) : DbCrud {
         foreach (array_map('trim',explode(',', $fields)) as $key => $value)
-            $this->required_fields[$value] = $key;
+            $this->formHandler->requiredFields[$value] = $key;
 
         return $this;
     }
 
     public function fieldPlaceholder (string $field, string $placeholder) : DbCrud {
-        $this->field_placeholders[$field] = $placeholder;
+        $this->formHandler->fieldPlaceholders[$field] = $placeholder;
         return $this;
     }
     
+    /**
+    * @deprecated deprecated, use setFieldProperty instead
+    */
     public function fieldType (string $field, string $type, string $valuelist='', int $rows=2, int $cols=40) : DbCrud {
         if ( !in_array($type, ['text', 'integer', 'numeric', 'checkbox', 'select', 'date', 'datetext', 'datetime', 'datalist', 'textarea', 'timetext','grid']) )
             throw new Exception("unsupported field type $type");
@@ -152,14 +140,87 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     *  sets field properties
+     * 
+     *  @param string $field the fields name
+     *  @param string $config. current valid properties are:
+     *                'type, relation', 'search', 'text', 'integer', 'numeric', 'checkbox', 'select',
+     *       '         date', 'datetext', 'datetime', 'datalist', 'textarea', 'timetext', 'grid'
+     * 
+     */
+    public function setFieldProperty(string $field, ...$config) : DbCrud {
+        if (!isset($config['type'])) {
+            throw new InvalidArgumentException("Missing 'type' key in field configuration.");
+        }
+
+        foreach ($config as $property => $value) {
+            $type = $config['type'];
+    
+            switch ($type) {
+                case 'checkbox':
+                    if ( empty($config['values']) )
+                        $this->field_types[$field]['values'] = '0,1';
+                    
+                    break;
+                case 'textarea':
+                case 'grid':
+                    if ( empty($config['rows']) )
+                        $this->field_types[$field]['rows'] = 2;
+
+                    if ( empty($config['cols']) )
+                        $this->field_types[$field]['cols'] = 2;
+
+                    break;
+            }
+        
+            $allowedTypes = [
+                'type', 'relation', 'search', 'text', 'integer', 'numeric', 'checkbox', 'select',
+                'date', 'datetext', 'datetime', 'datalist', 'textarea', 'timetext', 'grid'
+            ];
+        
+            if (!in_array($type, $allowedTypes, true)) {
+                throw new InvalidArgumentException("Invalid field type: {$type}");
+            }
+        
+            $this->field_types[$field][$property] = $value;
+        }
+
+        return $this;
+    }
+    
+    /**
+     *  gets field properties
+     * 
+     *  @param string $property. current valid properties are:
+     *                'relation', 'search', 'text', 'integer', 'numeric', 'checkbox', 'select',
+     *       '         date', 'datetext', 'datetime', 'datalist', 'textarea', 'timetext', 'grid'
+     * 
+     *  @param string $value the property possible value. (a value list is comma separated)
+     */
+     public function getFieldProperty(string $field, string $property=''): mixed {
+        if ( empty($property) )
+            return $this->field_types[$field] ?? [];
+         
+        return $this->field_types[$field][$property] ?? '';
+    }
+    
     public function fieldValue (string $field, string $value) : DbCrud{
-        $this->field_values[$field] = $value;
+        $this->formHandler->fieldValues[$field] = $value;
         return $this;
     }
 
     public function fieldOnChange(string $field, string $rel_table, array $mapping) : DbCrud {
-        $this->field_onchange[$field] = ['mapping'=>$mapping, 'rel_table'=>$rel_table];
+        $this->fieldDataAttr($field, mapping: json_encode($mapping), method: $rel_table, token: $this->token());
         JsScript::instance()->add_script('onchange');
+        return $this;
+    }
+
+    public function fieldDataAttr(string $field, ...$data) : DbCrud {
+        foreach ($data as $attr => $value) {
+            $this->formHandler->fieldDataAttr[$field][$attr] = $value;
+        }
+
         return $this;
     }
 
@@ -195,12 +256,14 @@ class DbCrud {
     }
 
     public function setDatepicker (string $field, string $format='yyyy-mm-dd', string $lang='en') : DbCrud {
-        $this->datepicker[$field] = ['format'=>$format, 'lang'=>$lang];
+        $this->formHandler->datepicker[$field] = ['format'=>$format, 'lang'=>$lang];
+        JsScript::instance()->add_script('datepicker', 'before');
+        JsScript::instance()->add_css('datepicker');
         return $this;
     }
 
     public function setRelation(string $field, string $relatedField, string $relatedTable) : DbCrud {
-        $this->field_types[$field] = ['type'=>'relation', 'rel_table'=>$relatedTable, 'rel_field'=>$relatedField]; 
+        $this->setFieldProperty($field, type: 'relation', rel_table: $relatedTable, rel_field: $relatedField);
         return $this;
     }
 
@@ -208,12 +271,13 @@ class DbCrud {
     * @deprecated deprecated, use fieldType instead
     */
     public function setGrid(string $field, int $rows, int $cols) : DbCrud {
-        $this->field_types[$field] = ['type'=>'grid', 'rows'=>$rows, 'cols'=>$cols];
+        $this->setFieldProperty($field, type: 'grid', rows: $rows, cols: $cols);
         return $this;
     }
 
     public function setSearchRelation(string $field, string $relatedTable, string $relatedField, bool $constraint=true) : DbCrud {
-        $this->field_types[$field] = ['type'=>'search', 'rel_table'=>$relatedTable, 'rel_field'=>$relatedField, 'constraint'=>$constraint]; 
+        $this->setFieldProperty($field, type: 'search', rel_table: $relatedTable, rel_field: $relatedField, constraint: $constraint);
+        $this->fieldDataAttr($field, method: $relatedTable, token: $this->token(), deferred: 'onchange');
         JsScript::instance()->add_script('searchrelation');
         return $this;
     }
@@ -225,31 +289,31 @@ class DbCrud {
 
     public function linkedTable(string $controller, string $button_value, string $method='index') : DbCrud {
         unset($this->linked_table);
-        $this->linked_table['controller'] = $controller;
-        $this->linked_table['button_value'] = $button_value;
-        $this->linked_table['method'] = $method;
+        $this->formHandler->linkedTable['controller'] = $controller;
+        $this->formHandler->linkedTable['button_value'] = $button_value;
+        $this->formHandler->linkedTable['method'] = $method;
         return $this;
     }
 
     public function subForm(callable $controller, string $button_value) : DbCrud {
         unset($this->subform);
-        $this->subform['callback'] = $controller;
-        $this->subform['button_value'] = $button_value;
+        $this->formHandler->subform['callback'] = $controller;
+        $this->formHandler->subform['button_value'] = $button_value;
         return $this;
     }
 
     public function onException(callable $callback) : DbCrud {
-        $this->callbackException = $callback;
+        $this->formHandler->callbackException = $callback;
         return $this;
     }
 
     public function layout_grid(array $rows) : DbCrud {
-        $this->rows = $rows;
+        $this->formHandler->rows = $rows;
         return $this;
     }
 
     public function setContstraints(string $field, string $depending_table, string $depending_field) : DbCrud {
-        $this->constraints[$field][] = ['table'=>$depending_table,  'field'=>$depending_field];
+        $this->formHandler->constraints[$field][] = ['table'=>$depending_table,  'field'=>$depending_field];
         return $this;
     }
 
@@ -259,473 +323,16 @@ class DbCrud {
         return $this;
     }
 
-    public function grid (int $page=1) : string {
-        $this->show_grid($page);
+    public function grid (int $page=1, string $orderby='') : string {
+        if ( empty($orderby) && !empty($_REQUEST['orderby']) )
+            $orderby = $_REQUEST['orderby'];
+
+        $this->show_grid($page, $orderby);
         return '<div id="dbc-container">'.$this->echo_data.'</div>';
     }
 
     public function form(string $action, string $id='', string $msg='', string $wrapper='') : string {
-
-        $link_id = $id;
-
-        if ( $this->encode_identifier && !empty($id)) 
-            $id = $this->base64url_decode($id);
-        
-        // what fields we are dealing with ?
-        switch ($action) {
-            case 'add':
-                $fields = $this->add_fields;
-                break;
-            case 'edit':
-                $fields = $this->edit_fields;
-                break;
-            case 'show':
-                $fields = $this->read_fields;
-                break;
-            default:
-                $fields = [];
-                break;
-        }
-
-        $search = $_REQUEST["search"]??'';
-        $page = $_REQUEST['last_page']??1;
-
-        if ( !empty($search) )
-            $query="?search=$search&last_page=$page";
-        else
-            $query="?last_page=$page";
-
-
-        $grid_to = '/'.$this->uri['class'];
-        $backlink = "$grid_to/grid/{$page}{$query}";
-        $deletelink = "$grid_to/delete/{$link_id}{$query}";
-        $form_action = '/'.$this->uri['path'].$query;
-
-        if ( empty($wrapper) ) // default wrapper
-            if ( !empty($this->rows) )
-                $wrapper = 'bootstrap-inline';
-            else
-                $wrapper = 'bootstrap-h-sm';
-
-        // start the form
-        $subform_requested = (htmlspecialchars($_REQUEST["subform"]??'') === 'true');
-        $form = new Formbuilder($this->table->name(), ['action'=>$form_action, 'wrapper'=>$wrapper]);
-        $disabled_main_form = $subform_requested === true ? 'disabled' : '';
-        $form->fieldset_open('', $disabled_main_form);
-
-        // overwrite date and time formats from grid
-        $form->date_format = $this->date_fmt;
-        $form->time_format = $this->time_fmt;
-
-        if ( !empty($msg) )
-            $form->message($msg);
-
-        // === 2. form submitted === 
-
-        if ( $form->submitted() && isset($_POST["mainform-save"]) ) { // if submitted we can apply rules and validate
-            foreach ($fields as $key => $field) { // apply basic rules
-
-                if ( $this->table->fields($field)['required'] ) // meta data required fields
-                    $form->rule('required', $field);
-                else
-                    if (isset($this->required_fields[$field]) ) // user required fields 
-                        $form->rule('required', $field,);
-
-                switch ($this->field_types[$field]['type']) {
-                    case 'integer':
-                        $form->rule('integer', $field);
-                        break;
-                    case 'numeric':
-                        $form->rule('numeric', $field);
-                        break;
-                    case 'date':
-                    case 'datetext':
-                    case 'datetime':
-                        $form->rule('date', $field);
-                        break;
-                    case 'timetext':
-                        $form->rule('time', $field);
-                        break;
-                    case 'relation':
-                    case 'search': 
-                        $constraint = $this->field_types[$field]['constraint']??false;
-
-                        if ( $constraint === true )
-                            $form->rule([$this, 'check_relation'], $field); // preventing fk constraints
-                        
-                        break;
-                }
-            }
-
-            if ( !empty($this->callback_rules) )  // apply used defined rules
-                foreach ($this->callback_rules as $field => $rule)
-                    $form->rule($rule, $field);
-
-            $data = $form->validate(implode(',', $fields)); // finally validate the data
-    
-            if ( $data === false ) // something has gone very wrong
-                $form->message('data cannot be saved');
-
-            // === 3. form validated === 
-
-            if($form->ok()) { // validation success
-                foreach ($data as $field => $value) {
-                    switch ($this->field_types[$field]['type']) {
-                        case 'date':
-                        case 'datetext':
-                        case 'datetime':
-                            // dates in db are stored as integers
-
-                            if ( empty($value) )
-                                $data[$field] = null;
-                            else
-                                $data[$field] = strtotime($value);
-                            
-                            break;
-                        case 'timetext':
-                            // times in db are stored as integers
-
-                            if ( empty($value) )
-                                $data[$field] = null;
-                            else
-                                $data[$field] = strtotime($value) - strtotime('TODAY'); 
-
-                            break;
-                        case 'checkbox':
-                            // booleans can be stored in db as 0|1, false|true, off|on, -|+, no|yes etc
-                            // where array[0] represents false, array[1] represents true
-                            $values = explode(',',$this->field_types[$field]['values']);
-        
-                            if ( $value === null )
-                                $data[$field] = $values[0];
-                            else
-                                $data[$field] = $values[1];
-
-                            break;
-                        case 'relation':
-                        case 'search':
-                            $rel_table = $this->field_types[$field]['rel_table'];
-                            $rel_field = $this->field_types[$field]['rel_field'];
-                            $table = new DBTable($rel_table);
-                            $rel_key = $table->primaryKey()[0];
-                            $value = $table->where($rel_field, html_entity_decode($value, ENT_QUOTES | ENT_HTML5))->findColumn($rel_key);
-
-                            if ( isset($value[0]) )
-                                $data[$field] = $value[0];
-                            
-                            break;
-                        case 'grid':
-                            $data[$field] = json_encode($value);
-                            break;
-                        }
-                }
-    
-                try { // db constraints might raise an exception
-                    if ( empty($id) ) { // insert row
-                        if ( isset($this->callback_insert) )
-                            call_user_func($this->callback_insert, $data);
-                        else
-                            $this->table->insert($data);
-                    }
-                    else { // update row
-                        if ( isset($this->callback_update) )
-                            call_user_func($this->callback_update, $id, $data);
-                        else
-                            $this->table->update($id, $data);
-                    }
-
-                    if ( empty($id) && !empty($this->linked_table) ) { // in add mode, redirect to a linked table controller if set
-                        $id = $data[$this->primaryKey]??''; // primary key might be in the data
-                        
-                        if ( empty($id) ) // primary key is autoincrement
-                            $id = $this->table->database()->lastInsertId($this->table->name());
-                        
-                        if ( $id !== false ) {
-                            $editlink =  "$grid_to/edit/$id";
-                            Helper::redirect($editlink);
-                            return '';
-                        }
-                    }
-
-                    Helper::redirect($backlink); // redirect to grid controller
-                    return '';
-                } catch (\Throwable $th) {
-                    if ( !empty($this->callbackException) ) {
-                        $result = call_user_func($this->callbackException, $th);
-
-                        if ( is_string($result) )
-                            $form->message($result);
-                        else
-                            $form->message($th->getMessage());
-                    }
-                    else
-                        $form->message($th->getMessage());
-                }
-            }
-        }
-
-        // === 1. form rendering === 
-
-        if ( ! empty($id) ) // get the row
-            $data = $this->table->find($id);
-        else
-            $data = false;
-
-        foreach ($fields as $key => $field) { // build the form fields
-            $readonly = '';
-            $placeholder = '';
-
-            if ( isset($this->field_placeholders[$field]) )
-                $placeholder = ' placeholder="'.$this->field_placeholders[$field].'"';
-
-            if ( isset($this->field_titles[$field]) ) // do we have a label for the field ?
-                $label = $this->field_titles[$field];
-            else
-                $label = '';
-
-            if ( $data === false ) { // do we have values ?
-                if ( isset($this->field_values[$field]) )
-                    $value = $this->field_values[$field];
-                else
-                    $value = '';
-            }
-            else
-                $value = $data[$field]; 
-
-            if ( $value == null )
-                $value = '';
-
-            if ( isset($this->callback_fields[$field]) ) // user defined value formatting
-                $value = call_user_func($this->callback_fields[$field], 'form', $value, null);
-
-            if ( $action == 'show' ) // show applies all readonly
-                $readonly = 'readonly';
-            else
-                if ( isset($this->readonly_fields[$field]) ) // user defined readonly
-                    $readonly = 'readonly';
-           
-            if ( $field == $this->primaryKey && $action == 'edit' ) // we wont allow to edit a primary key
-                $readonly = 'readonly';
-
-            $ajax_token = $this->token();
-
-            if ( !empty($this->field_onchange[$field]) ) {
-                $jsencoded = json_encode($this->field_onchange[$field]['mapping']);
-
-                if ($jsencoded === false )
-                    throw new Exception("onchange mapping $field cannot encode");
-
-                $rel_table = $this->field_onchange[$field]['rel_table'];
-                $controller = JsScript::instance()->add_var("/clientRequests/{$rel_table}");
-                $mapping = JsScript::instance()->add_var($jsencoded);
-                JsScript::instance()->var('token', $ajax_token);
-                $onchange = " onchange=\"form_field_onchange(this, $controller, $mapping, token)\"";
-            }
-            else
-                $onchange='';
-
-            switch ($this->field_types[$field]['type']) {
-                case 'date':
-                    // dates in db are stored as integers
-                    if ( !empty($value) )
-                        $value = date($this->date_fmt, $value);
-
-                    $form->date($field, ['label'=>$label, 'string'=>$readonly.$placeholder.$onchange, 'value'=>$value]);
-                    break;
-                case 'datetext':
-                    // dates in db are stored as integers
-                    if ( !empty($value) )
-                        $value = date($this->date_fmt, $value);
-
-                    $form->datetext($field, ['label'=>$label, 'format'=>$this->date_fmt, 'string'=>$readonly.$placeholder.$onchange, 'value'=>$value]);
-                    break;
-                case 'timetext':
-                    // times in db are stored as integers
-                    if ( !empty($value) )
-                        $value = gmdate($this->time_fmt, $value);
-
-                    $form->timetext($field, ['label'=>$label, 'format'=>$this->date_fmt, 'string'=>$readonly.$placeholder.$onchange, 'value'=>$value]);
-                    break;
-                case 'datetime':
-                    // dates in db are stored as integers
-                    if ( !empty($value) )
-                        $value = date($this->date_fmt.' '.$this->time_fmt, $value);
-
-                    $form->datetime($field, ['label'=>$label, 'string'=>$readonly.$placeholder.$onchange, 'value'=>$value]);
-                    break;
-                case 'textarea':
-                    $rows = $this->field_types[$field]['rows'];
-                    $cols = $this->field_types[$field]['cols'];
-                    $form->textarea($field, ['label'=>$label,'string'=>$readonly.$placeholder.$onchange, 'value'=>$value, 'rows'=>$rows, 'cols'=>$cols]);
-                    break;
-                case 'checkbox':
-                    // booleans can be stored in db as 0|1, false|true, off|on, -|+, no|yes etc
-                    // where array[0] represents false, array[1] represents true
-                    $values = explode(',',$this->field_types[$field]['values']);
-
-                    if ( array_search($value, $values) == 1)
-                        $checked = true;
-                    else
-                        $checked = false;
-
-                    $form->checkbox($field, ['label'=>$label, 'checked'=>$checked, 'string'=>$readonly.$onchange]);
-                    break;
-                case 'select':
-                    $values = $this->field_types[$field]['values'];
-                    $form->select($field, $values, ['label'=>$label, 'value'=>$value, 'string'=>$readonly.$onchange]);
-                    break;
-                case 'datalist':
-                    $values = $this->field_types[$field]['values'];
-                    $form->datalist($field,  $values, ['label'=>$label, 'value'=>$value, 'string'=>$readonly.$placeholder.$onchange]);
-                    break;
-                case 'relation':
-                    $rel_table = $this->field_types[$field]['rel_table'];
-                    $rel_field = $this->field_types[$field]['rel_field'];
-                    $table = new DBTable($rel_table);
-                    $values = $table->orderby($rel_field)->findColumn($rel_field);
-                    array_unshift($values, '');
-
-                    if ( !empty($value) ) {
-                        $result = $table->find($value);
-
-                        if ($result === false)
-                            $value = '';
-                        else
-                            $value = $result[$rel_field];
-                    }
-    
-                    $form->select($field, $values, ['label'=>$label, 'value'=>$value, 'string'=>$readonly.$onchange]);
-                    break;
-                case 'search':
-                    $rel_table = $this->field_types[$field]['rel_table'];
-                    $rel_field = $this->field_types[$field]['rel_field'];
-                    $table = new DBTable($rel_table);
-
-                    if ( !empty($value) ) {
-                        $result = $table->find($value);
-
-                        if ($result === false)
-                            $value = '';
-                        else
-                            $value = $result[$rel_field];
-                    }
-                    
-                    JsScript::instance()->var('token', $ajax_token);
-                    $var = JsScript::instance()->add_var("/clientRequests/{$rel_table}Search");
-                    $form->search($field, ['label'=>$label, 'value'=>$value, 'string'=>$readonly.$placeholder],"searchrelationResults(this, $var, token)");
-                    break;
-                case 'grid':
-                    $values = json_decode($value, true);
-
-                    if ( $values === false )
-                        $values =  [];
-
-                    $rows = $this->field_types[$field]['rows'];
-                    $cols = $this->field_types[$field]['cols'];
-
-                    if ( !empty($readonly) )
-                        $string = array_fill(0, $rows, array_fill(0, $cols, $readonly.$placeholder.$onchange));
-                    else
-                        $string = [];
-
-                    $form->grid($field, ['label'=>$label, 'value'=>$values, 'rows'=>$rows, 'cols'=>$cols, 'string'=>$string ]);
-                    break;
-                default:
-                    $form->text($field, ['label'=>$label,'string'=>$readonly.$placeholder.$onchange, 'value'=>$value]);
-                    break;
-            }
-        }
-
-        $form->html('<br>');
-
-        // build the form button bar
-
-        $btn_bar = [];
-
-        if ( $action == 'show' ) {
-            $btn_bar['names'] = ['mainform-back'];
-            $btn_bar['values'] = [$this->form_back];
-            $btn_bar['onclicks'] = [$backlink];
-            $btn_bar['types'] = ['button'];
-            $btn_bar['strings'] = ['class="btn btn-secondary"'];
-        }
-        else {
-            $btn_bar['names'] = ['mainform-save','back'];
-            $btn_bar['values'] = [$this->form_save,$this->form_back];
-            $btn_bar['onclicks'] = ['', $backlink];
-            $btn_bar['types'] = ['submit','button'];
-            $btn_bar['strings'] = ['', 'class="btn btn-secondary"'];
-        }
-    
-        if ( $action != 'add' && !empty($this->form_delete) ) { // only edit mode
-            $disabled_delete = '';
-
-            if ( !empty($this->constraints) ) // any FK constraints defined will disable the delete btn...
-                foreach ($this->constraints as $field => $values) {
-                    foreach ($values as $index => $value) {
-                        $depending_table = $value['table'];
-                        $depending_field = $value['field'];
-                        $table = new DBTable($depending_table);
-                        $value = $data[$field];
-                        $result = $table->where($depending_field, $value)->limit(1)->count(); // check if references are found
-        
-                        if ( $result > 0 ) {
-                            $disabled_delete = 'disabled';
-                            break;
-                        }
-                    }
-                }
-    
-            $btn_bar['names'][] = 'mainform-delete';
-            $btn_bar['values'][] = $this->form_delete;
-            $btn_bar['onclicks'][] = $deletelink;
-            $btn_bar['types'][] = 'button'; // type submit not allowed here
-            $btn_bar['strings'][] = 'class="btn btn-danger '.$disabled_delete.'"';
-
-            if ( !empty($this->linked_table) ) { // add button to a linked table controller
-                $controller = $this->linked_table['controller'];
-                $value = $this->linked_table['button_value'];
-                $method = $this->linked_table['method'];
-                $btn_bar['names'][] = $controller;
-                $btn_bar['values'][] = $value;
-                $btn_bar['types'][] =  'button';
-                $btn_bar['strings'][] =  'class="btn btn-success"';
-                $btn_bar['onclicks'][] = helper::url()."/$controller/$method/$link_id";
-            }
-
-            if ( !empty($this->subform) ) { // add button to enable subform mechanism
-                $value = $this->subform['button_value'];
-                $btn_bar['names'][] = 'btn-subform';
-                $btn_bar['values'][] = $value;
-                $btn_bar['types'][] =  'button';
-                $btn_bar['strings'][] =  'class="btn btn-success"';
-                $btn_bar['onclicks'][] = "$grid_to/edit/$id?subform=true";;
-            }
-        }
-
-        $form->button_bar($btn_bar['names'],$btn_bar['values'],$btn_bar['onclicks'],$btn_bar['types'],$btn_bar['strings']);
-        $form->fieldset_close();
-
-        if ( !empty($this->rows) )
-            $form->layout_grid($this->rows);
-
-        if ( $subform_requested ) {
-            $subform = '<div>'.call_user_func($this->subform['callback'], $id).'</div>';
-        }
-        else
-            $subform = '';
-
-        if ( !empty($this->datepicker) ) {
-            $js = JsScript::instance();
-
-            foreach ($this->datepicker as $field => $opts) {
-                $format = $opts['format']??'';
-                $lang = $opts['lang']??'';
-                $js->add_var("Datepicker('#$field','$format','$lang')");
-            }
-        }
-
-        return '<div id="dbc-container">'.$form->render().$subform.'</div>'.JsScript::instance()->generate();
+        return $this->formHandler->handle($action, $id, $msg, $wrapper);
     }
 
     /**
@@ -758,22 +365,22 @@ class DbCrud {
     }
 
     public function clear() : void {
-        $to = '/'.$this->uri['class'];
+        $to = '/'.$this->get_uri('class');
         Helper::redirect("$to/grid/1");
     }
 
     public function setRule(string $field, string|callable $callback) : DbCrud {
-        $this->callback_rules[$field] = $callback;
+        $this->formHandler->callbackRules[$field] = $callback;
         return $this;
     }
 
     public function callbackUpdate(callable $callback) : DbCrud {
-        $this->callback_update = $callback;
+        $this->formHandler->callbackUpdate = $callback;
         return $this;
     }
 
     public function callbackInsert(callable $callback) : DbCrud {
-        $this->callback_insert = $callback;
+        $this->formHandler->callbackInsert = $callback;
         return $this;
     }
 
@@ -791,24 +398,27 @@ class DbCrud {
         return $this;
     }
 
-    public function check_relation(string $value, string $field) : string {
-        $rel_table = $this->field_types[$field]['rel_table'];
-        $rel_field = $this->field_types[$field]['rel_field'];
-        $table = new DBTable($rel_table);
-        $rel_key = $table->primaryKey()[0];
-        $value = $table->where($rel_field, html_entity_decode($value, ENT_QUOTES | ENT_HTML5))->findColumn($rel_key);
-
-        if ( !isset($value[0]) )
-            return 'pls enter a valid value from the proposed values';
-
-        return '';
-    }
-
     public function rowcount () : int {
         return $this->table->count($this->grid_sql, $this->grid_sql_params);
     }
 
-    protected function show_grid(int $page) : void {
+    public function get_uri(string $part) : string { //new
+        return $this->uri[$part] ?? '';
+    }
+
+    public function get_field_title(string $field) : string {
+        return $this->field_titles[$field] ?? ''; 
+    }
+
+    public function get_callback_field(string $field) : callable | null {
+        return $this->callback_fields[$field] ?? null;
+    }
+
+    public function get_primary_key() : string {
+        return $this->primaryKey;
+    }
+
+    protected function show_grid(int $page, string $orderby) : void {
         $offset = ($page - 1) * $this->limit;
 
         // headerbar
@@ -817,14 +427,15 @@ class DbCrud {
 
         $this->gridSearch();
         $total_rows = $this->rowcount();
+        $this->gridSearch(); // yes, we have to call this again
 
-        $this->gridSearch();
-        $data = $this->table->limit($this->limit)->offset($offset)->identify(true)->findAll($this->grid_sql, $this->grid_sql_params);
+        if ( empty($orderby) )
+            $data = $this->table->limit($this->limit)->offset($offset)->identify(true)->findAll($this->grid_sql, $this->grid_sql_params);
+        else
+            $data = $this->table->limit($this->limit)->offset($offset)->identify(true)->orderby($orderby)->findAll($this->grid_sql, $this->grid_sql_params);
 
         $total_pages = intval(ceil( ($total_rows / $this->limit) ));
-
-        $uri = '/'.$this->uri['class']; 
-
+        $uri = '/'.$this->get_uri('class'); 
         $search = $_REQUEST["search"]??'';
 
         if ( !empty($search) )
@@ -844,9 +455,12 @@ class DbCrud {
             $this->echo_data .= '<thead><tr>';
 
             foreach ($this->grid_fields as $key => $field) {
-                $marker = (in_array($field, $this->search_fields??[]) === true) ? '*' : '';
-                $title = $this->field_titles[$field]??'';
-                $this->echo_data .= "<th>$title$marker</th>";
+                $marker = (in_array($field, $this->search_fields??[]) === true) ? '&nbsp;<i class="bi bi-search"></i>' : '';
+                $title = $this->get_field_title($field);
+                $sort = ($field === $orderby) ? '<i class="bi bi-sort-alpha-down">&nbsp;</i>' : '';
+                $link = '/' . $this->get_uri('class') . $this->query('orderby', $field);
+                $html = '<span class="page-item"><a class="page-link" href="' . $link . '">' . $sort . $title . $marker . '</a></span>';
+                $this->echo_data .= "<th>$html</th>";
             }
 
             if ( !empty($grid_show.$grid_edit.$grid_delete) )
@@ -863,7 +477,7 @@ class DbCrud {
             foreach ($this->grid_fields as $key => $field) {
                 $value = $column[$field];
 
-                switch ($this->field_types[$field]['type']??'') {
+                switch ($this->getFieldProperty($field, 'type') ) {
                     case 'date':
                     case 'datetext':
                         if ( !empty($value) )
@@ -883,7 +497,7 @@ class DbCrud {
                     case 'checkbox':
                         // booleans can be stored in db as 0|1, false|true, off|on, -|+, no|yes etc
                         // where array[0] represents false, array[1] represents true
-                        $values = explode(',',$this->field_types[$field]['values']);
+                        $values = explode(',',$this->getFieldProperty($field, 'values'));
 
                         if ( array_search($value, $values) == 1)
                             $checked = 'checked';
@@ -894,8 +508,8 @@ class DbCrud {
                         break;
                 }
 
-                if ( isset($this->callback_fields[$field]) )
-                    $value = call_user_func($this->callback_fields[$field], 'grid', $value, $column);
+                if ( !is_null($this->get_callback_field($field)) )
+                    $value = call_user_func($this->get_callback_field($field), 'grid', $value, $column);
 
                 $this->echo_data .= "<td>$value</td>";
             }
@@ -932,6 +546,19 @@ class DbCrud {
         return ['path'=>$path,'uri'=>$uri, 'class'=>$class,'method'=>$method,'id'=>$id,'query'=>$query];
     }
 
+    protected function query(string $var, string $value='') : string {
+        $qry = [];
+        parse_str($this->get_uri('query'), $qry);
+
+        if (empty($value) )
+            unset($qry[$var]);
+        else
+            $qry[$var] = $value;
+
+        $result = http_build_query($qry);
+        return empty($result) ? '' : '?'.$result;
+    }
+
     protected function gridSearch() : bool {
         if ( empty( $this->grid_search) )
             return false;
@@ -959,19 +586,19 @@ class DbCrud {
 
         if ( isset ($_REQUEST["search_submit"]) ) {
             $search = $_REQUEST["search"]??'';
-            $to = '/'.$this->uri['class'];
+            $to = '/'.$this->get_uri('class');
 
             if ( empty($search) )
-                Helper::redirect("$to/grid/1");
+                Helper::redirect("$to/grid/1".$this->query('search'));
             else
-                Helper::redirect("$to/grid/1?search=$search");
+                Helper::redirect("$to/grid/1".$this->query('search', $search));
 
             return '';
         }
         else 
             $search = $_REQUEST["search"]??'';
 
-        $uri = '/'.$this->uri['class'];
+        $uri = '/'.$this->get_uri('class');
         $html .= '<table class="table table-bordered table-hover dbc-headerbar"><tr>';
 
         if ( !empty($this->grid_add) ) {
@@ -993,28 +620,21 @@ class DbCrud {
         if ( $total_pages == 1 )
             return '';
         
-        $search = $_REQUEST["search"]??'';
-        $query = empty($search) ? '' : "?search=$search";
+        $query = $this->query('search', $_REQUEST["search"]??'');
         $html = '<div class="dbc-footerbar">';
         $c = $current_page - 1;
-
-        if ( $c < 1 )
-            $c = 1;
-
+        $c = max(1, $c);
         $min = (intdiv($c, $max_pages) * $max_pages) + 1;  
         $max = (intdiv(($c + 5), $max_pages) * $max_pages) + 1;  
-
-        if ( $max > $total_pages )
-            $max = $total_pages + 1;
-
-        $uri = '/'.$this->uri['class'];
+        $max = min($max, $total_pages + 1);
+        $uri = '/'.$this->get_uri('class');
         $html .= '<nav aria-label="Page navigation"><ul class="pagination">';
 
         if ( $min > $max_pages ) {
             $page = $min - 1;
-            $link = $uri . "/grid/1$query";
+            $link = $uri . "/grid/1{$query}";
             $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">First</a></li>';
-            $link = $uri . "/grid/$page";
+            $link = $uri . "/grid/{$page}{$query}";
             $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">Previous</a></li>&nbsp';
         }
 
@@ -1038,7 +658,7 @@ class DbCrud {
         return $html;
     }
 
-    private function token() : string {
+    public function token() : string {
         $csrf_generator = new StatelessCSRF(Helper::env('app_secret', 'empty_secret'));
         $csrf_generator->setGlueData('ip', $_SERVER['REMOTE_ADDR']);
         $csrf_generator->setGlueData('user-agent', $_SERVER['HTTP_USER_AGENT']);            
@@ -1046,11 +666,11 @@ class DbCrud {
         return $token;
     }
 
-    private function base64url_encode(string $string_value) : string {
+    public function base64url_encode(string $string_value) : string {
         return rtrim(strtr(base64_encode($string_value), '+/', '-_'), '=');
     }
 
-    private function base64url_decode(string $base64_value) : string {
+    public function base64url_decode(string $base64_value) : string {
         return base64_decode(strtr($base64_value, '-_', '+/'));
     }
 }

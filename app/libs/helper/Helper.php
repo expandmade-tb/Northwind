@@ -2,7 +2,7 @@
 
 /**
  * Helper class
- * Version 1.4.1
+ * Version 1.6.0
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -264,8 +264,10 @@ class Helper {
 
         if ( (strcmp($config_filename, '.config.php') != 0) || empty($sec) )
             foreach ($vars as $var => $value) $_ENV[$var] = $value; // value is already encrypted
-        else
-            foreach ($vars as $var => $value) $_ENV[$var] = CryptStr::instance($sec)->encrypt($value); // encrypt value now
+        else {
+            $crypt = CryptStrSingleton::getInstance($sec);
+            foreach ($vars as $var => $value) $_ENV[$var] = $crypt->encrypt($value); // encrypt value now
+        }
  
         try {
             $dbname=self::env('db_name');
@@ -302,12 +304,13 @@ class Helper {
      *
      * @return string
      */
-    public static function env (string $var, mixed $default=null) : string {
+    public static function env (string $var, mixed $default=null) : mixed {
         $sec = getenv('APP_ENV_ENC');
 
         if ( isset($_ENV[$var]) )
             if ( !empty($sec) ) {
-                $result = CryptStr::instance($sec)->decrypt($_ENV[$var]);
+                $crypt = CryptStrSingleton::getInstance($sec);
+                $result = $crypt->decrypt($_ENV[$var]);
 
                 if ( $result === false )
                     return $default;
@@ -425,4 +428,30 @@ class Helper {
 
         return true;
     }
+
+    public static function request_geo_location(string $ip='') : array | false {
+        if (empty($ip) )
+            $ip = self::get_ip_addr();
+        
+        $headers = [
+            'Accept: application/json',
+        ];
+    
+        $ch = curl_init();
+    
+        curl_setopt($ch, CURLOPT_URL , "http://ip-api.com/json/{$ip}"); 
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        $response = curl_exec($ch);
+
+        if ( curl_errno($ch) )
+            return false;
+        else
+            if ( !is_string($response) )
+                return false;
+            else
+                return json_decode($response, true);
+    }
+
 }

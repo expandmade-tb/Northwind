@@ -2,7 +2,7 @@
 
 /**
  * Users Maintenance Controller
- * Version 1.3.1
+ * Version 1.4.0
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -10,25 +10,27 @@
 namespace controller;
 
 use dbgrid\DbCrud;
-use helper\CryptStr;
+use helper\CryptStrSingleton;
 use helper\Helper;
 use helper\Session;
 use models\user_clients_model;
 use models\users_model;
 
-class Users extends CrudController {
+class Users extends BaseController {
+    private DbCrud $crud;
 
     function __construct() {
         parent::__construct();
         
         $this->crud = new DbCrud(new users_model());
+        $this->crud->grid_title = '';
         $this->crud->grid_delete = '';
         $this->crud->grid_show = '';
         $this->crud->addFields('Name,Mail,AccessControl,RoleId,ValidUntil');
         $this->crud->editFields('UserId,ClientId,Name,Mail,AccessControl,RoleId,ValidUntil');
         $this->crud->gridFields('UserId,Name,Mail,ValidUntil');
         $this->crud->readonlyFields('UserId,ClientId');
-        $this->crud->fieldType('ValidUntil', 'date');
+        $this->crud->setFieldProperty('ValidUntil', type: 'date');
         $this->crud->setRelation('RoleId', 'Name', 'Roles');
         $this->crud->searchFields('Name,Mail');
 
@@ -43,7 +45,8 @@ class Users extends CrudController {
     }
 
     public function callback_update(mixed $id, array $data) : bool {
-        $data['Mail'] = CryptStr::instance(Helper::env('app_secret'))->encrypt($data['Mail']); // encrypt Mail
+        $crypt = CryptStrSingleton::getInstance(Helper::env('app_secret'));
+        $data['Mail'] = $crypt->encrypt($data['Mail']); // encrypt Mail
         return $this->crud->model()->update($id, $data);
     }
 
@@ -51,39 +54,39 @@ class Users extends CrudController {
         if ( empty($value) )
             return $value;
             
-        if ( ctype_xdigit($value) ) {
-            $result = CryptStr::instance(Helper::env('app_secret'))->decrypt($value); // decrypt Mail
+        $crypt = CryptStrSingleton::getInstance(Helper::env('app_secret'));
+        $result = $crypt->decrypt($value); // decrypt Mail
 
-            if ( $result === false )
-                return $value;
-            else
-                return $result;
-        }
-        else
+        if ( $result === false )
             return $value;
+        else
+            return $result;
     }
 
     public function callback_insert(array $data) : void {
+        $crypt = CryptStrSingleton::getInstance(Helper::env('app_secret'));
         $userid = uniqid();
-        $keycode = bin2hex(random_bytes(32));
         $clientid = bin2hex(random_bytes(16));
-        $location = Helper::env('tmp_location');
-        $aname = strtolower(str_replace(' ','_', Helper::env('app_title')));
-        $uname = strtolower(str_replace(' ','_', $data['Name']));
-
-        // create and save keyfile
-        $filename = "$location/$aname-$uname.key";
-        $result = json_encode(['user_id'=>$userid,'key_code'=>$keycode]);
-        $cdata = CryptStr::instance(Helper::env('app_secret'))->encrypt($result === false ? '' : $result);
-        file_put_contents($filename, Auth::KEY_HEADER.$cdata);
-
-        // save the current user data
         $data['UserId'] = $userid;
         $data['ClientId'] = $clientid;
-        $data['KeyCode'] = password_hash($keycode,  PASSWORD_DEFAULT); // hash Keycode
-        $data['Mail'] = CryptStr::instance(Helper::env('app_secret'))->encrypt($data['Mail']); // encrypt Mail
+        $data['KeyCode'] = 'register-'.$userid;
+        $data['Mail'] = $crypt->encrypt($data['Mail']);
         $this->crud->model()->insert($data);
         Auth::create_registration($data);
+    }
+
+    public function index () : void {
+       $this->grid(1);
+    }
+
+    public function add() : void {
+        $this->data['dbgrid'] = $this->crud->form('add');
+        $this->view('Crud');
+    }
+
+    public function edit(string $id) : void {
+        $this->data['dbgrid'] = $this->crud->form('edit', $id);
+        $this->view('Crud');
     }
 
     public function delete(string $id) : void {
@@ -96,6 +99,17 @@ class Users extends CrudController {
             $this->data['dbgrid'] = $this->crud->grid();
         }
 
+        $this->view('Crud');
+    }
+
+    public function grid(int $page) : void {
+        $this->data['dbgrid'] = $this->crud->grid($page);
+        $this->view('Crud');
+    }
+
+    public function clear() : void {
+        $this->crud->clear();
+        $this->data['dbgrid'] = $this->crud->grid();
         $this->view('Crud');
     }
 }

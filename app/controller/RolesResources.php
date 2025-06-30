@@ -11,6 +11,7 @@ class RolesResources extends CrudController {
         parent::__construct();
         
         $this->crud = new DbCrud(new roles_resources_model());
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_search = '';
         $this->crud->limit = 15;

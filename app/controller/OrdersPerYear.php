@@ -12,7 +12,7 @@ class OrdersPerYear extends GridController {
         parent::__construct();
         
         $this->grid = new Dbgrid(new orders_extended_view());
-        $this->grid->grid_title = 'Orders per year';
+        $this->grid->grid_title = '';
         $this->grid->limit = 20;
         $this->grid->grid_search = '';
         $this->grid->gridSQL( DBView::getSQL('ordersperyear'));

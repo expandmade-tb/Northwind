@@ -35,15 +35,6 @@ class JsScript {
     }
 
     public function add_var(string $value) : string {
-        if ( substr($value, 0, 10) == 'Datepicker') {
-            $value = 'new ' . $value;
-            
-            if ( !isset($this->script['datepicker']) ) {
-                $this->add_script('datepicker', 'before');
-                $this->add_css('datepicker');
-            }
-        }
-
         $this->new_var += 1;
         $var = "v$this->new_var";
         $this->inline_vars["$var"] = $value;

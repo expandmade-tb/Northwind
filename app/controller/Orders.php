@@ -10,7 +10,7 @@ class Orders extends CrudController {
     function __construct() {
         parent::__construct();
         $this->crud = new DbCrud(new orders_model());
-        $this->html_compress = false;
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_delete = '';
         $this->crud->limit = 15;
@@ -30,6 +30,11 @@ class Orders extends CrudController {
         $this->crud->setDatepicker('RequiredDate');
         $this->crud->setDatepicker('ShippedDate');
         $this->crud->linkedTable('OrderDetails', 'Details', 'selectorder');
-        $this->crud->layout_grid(['OrderID,CustomerID','EmployeeID','OrderDate,','ShippedDate,RequiredDate','ShipVia,Freight','ShipName,ShipAddress','ShipCity,ShipRegion','ShipPostalCode,ShipCountry']);
+
+        $this->crud->fieldOnChange('CustomerID', 'Customers', 
+            ['CompanyName'=>'ShipName', 'Address'=>'ShipAddress','City'=>'ShipCity','Region'=>'ShipRegion',
+             'PostalCode'=>'ShipPostalCode','Country'=>'ShipCountry',]);
+        
+            $this->crud->layout_grid(['OrderID,CustomerID','EmployeeID','OrderDate,','ShippedDate,RequiredDate','ShipVia,Freight','ShipName,ShipAddress','ShipCity,ShipRegion','ShipPostalCode,ShipCountry']);
     }
 }

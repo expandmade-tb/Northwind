@@ -17,6 +17,7 @@ class OrderDetails extends BaseController {
         $this->data['js_files'][] = JAVASCRIPT.'/livesearch.js';
        
         $this->crud = new DbCrud(new orderdetails_model());
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_search = '';
         $this->crud->form_delete = '';

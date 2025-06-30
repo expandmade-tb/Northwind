@@ -4,7 +4,7 @@ namespace database;
 
 /**
  * implementation class of interface IDBTable
- * Version 1.9.2
+ * Version 1.9.3
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -417,6 +417,8 @@ class DBTable {
                         $values = $line;
 
                         try {
+                            $data = [];
+
                             foreach ($values as $key => $value) {
                                 $col = $fields[$key]??'col'.$key;
                                 $data[$col] = $value;
@@ -426,7 +428,7 @@ class DBTable {
                         } catch (\Throwable $th) {
                             /* @phpstan-ignore-next-line (extract statement not recognized by phpstan */
                             if ( !empty($on_insert_error) ) {  
-                                if ( call_user_func($on_insert_error, (int)$linecount, (string)$line) === true ) {
+                                if ( call_user_func($on_insert_error, (int)$linecount, $line) === true ) {
                                     $this->table->database()->rollBack();
                                     return false;
                                 }

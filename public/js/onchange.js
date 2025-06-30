@@ -1,18 +1,15 @@
-/**
- * @param {string} src the form field
- * @param {string} controller controller name + method on server
- * @param {string} mapping json data mapping
- * @param {string} token validation token
- * 
- */
-function form_field_onchange(src, controller, mapping, token){
+function form_field_onchange(src, event="onchange"){
+    if ( src.dataset.deferred === event )
+        return;
+
     let value = src.value;
 
     if (value.length < 1)
         return;
 
     var xhr = new XMLHttpRequest();
-    var url = controller + '?search_value=' + value;
+    var url = '/' + src.form.dataset.controller + '/' + src.dataset.method + 'Onchange' + '?changed_value=' + encodeURIComponent(value);
+    var token = src.dataset.token;
     xhr.open('GET', url, true);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.setRequestHeader('Ajax-Request-Token', token);
@@ -20,7 +17,7 @@ function form_field_onchange(src, controller, mapping, token){
     xhr.onreadystatechange = function(){
         if(xhr.readyState == 4 && xhr.status == 200){
             var data = JSON.parse(xhr.responseText);
-            var map = JSON.parse(mapping);
+            var map = JSON.parse(src.dataset.mapping);
 
             for (const [key, value] of Object.entries(map)) { // map result values to form fields
                 let result = data[key];

@@ -26,8 +26,9 @@ class Routes {
         'roles' => ['GET|POST|Roles', 'index,add,edit,delete,grid,clear,show'],
         'resources' => ['GET|POST|Resources', 'index,add,edit,delete,grid,clear,show'],
         'roles_resources' => ['GET|POST|RolesResources', 'index,add,edit,delete,grid,clear,show'],
+        'visitors' => ['GET|POST|Visitors', 'index,delete,grid,clear,show'],
         'upgrade' => ['GET|POST|Upgrade', 'index'],
-        'clientRequests' => ['GET|clientRequests', 'index,CustomersSearch,ProductsSearch']
+        'clientRequests' => ['GET|clientRequests', 'index,CustomersOninput,ProductsOninput,CustomersOnchange']
 //       'init' => ['GET|Init', 'index']
     ];
 

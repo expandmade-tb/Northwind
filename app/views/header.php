@@ -25,4 +25,4 @@
          </div>
        </div>
      </nav>
-    <br>
+     <?php echo $breadcrumb ?> 

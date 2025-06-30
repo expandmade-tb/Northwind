@@ -10,7 +10,7 @@ class OrdersExtended extends GridController {
     function __construct() {
         parent::__construct();
         $this->grid = new DbGrid(new orders_extended_view());
-        $this->grid->grid_title = 'Orders Subtotals';
+        $this->grid->grid_title = '';
         $this->grid->limit = 20;
         $this->grid->Fields('OrderID,CustomerID,OrderDate,ShipName,SubtotalGross,SubtotalNet');
         $this->grid->fieldTitles('OrderID,CustomerID,OrderDate,ShipName,SubtotalGross,SubtotalNet','Order,Customer,Order Date,Ship Name,Subtotal Gross,Subtotal Net');

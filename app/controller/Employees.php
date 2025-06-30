@@ -11,6 +11,7 @@ class Employees extends CrudController {
         parent::__construct();
         
         $this->crud = new DbCrud(new employees_model());
+        $this->crud->grid_title = '';
         $this->crud->grid_show = '';
         $this->crud->grid_delete = '';
         $this->crud->limit = 15;
@@ -21,7 +22,7 @@ class Employees extends CrudController {
         $this->crud->setRule('BirthDate', 'date');
         $this->crud->setRule('HireDate', 'date');
         $this->crud->setRelation('ReportsTo', 'LastName', 'Employees');
-        $this->crud->fieldType('Notes', 'textarea');
+        $this->crud->setFieldProperty('Notes', type: 'textarea');
         $this->crud->fieldPlaceholder('Title', 'Sales Representative, Sales Manager');
         $this->crud->fieldPlaceholder('TitleOfCourtesy', 'Mr./Ms./Mrs.');
         $this->crud->fieldPlaceholder('BirthDate', '1968-01-30');

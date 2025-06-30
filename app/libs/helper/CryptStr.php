@@ -1,99 +1,111 @@
 <?php
 
-namespace helper;
-
-/** 
- * Version 1.1.1
+/**
+ * Version 2.0.0
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
 
+namespace helper;
+
 class CryptStr {
-    protected static string $ENCRYPTION_ALGORITHM = 'AES-256-CBC';
-    protected static string $HASHING_ALGORITHM = 'sha256';
-    private static ?CryptStr $instance = null;
-    protected string $secret = '826561346285b80e4e2a85ead0be37ac';
+    private const VERSION = 'v2';
+    private const ENCRYPTION_ALGORITHM_V2 = 'aes-256-gcm';
+    private const HASHING_ALGORITHM = 'sha256';
+    private const PBKDF2_ITERATIONS = 100_000;
+    private const PBKDF2_SALT = '034f55af5c79935e17b2'; // Secure, static
+    private const KEY_LENGTH = 32;
+    private const IV_LENGTH_V2 = 12;
+    private const TAG_LENGTH = 16;
 
-    protected function __construct ( string $secret) {    
+    private string $secret;
+
+    // Cache for derived keys
+    private ?string $derivedKeyV2 = null;
+
+    public function __construct(string $secret) {
         $this->secret = $secret;
     }
 
-    public static function instance (string $secret) : CryptStr {
-        if ( self::$instance == null )
-            self::$instance = new CryptStr($secret);
-        else
-            if ( !empty($secret) )
-                (self::$instance)->set_secret($secret);
-
-        return self::$instance;
+    private function deriveKeyV2(): string {
+        if ($this->derivedKeyV2 === null) {
+            $this->derivedKeyV2 = hash_pbkdf2(
+                self::HASHING_ALGORITHM,
+                $this->secret,
+                self::PBKDF2_SALT,
+                self::PBKDF2_ITERATIONS,
+                self::KEY_LENGTH,
+                true
+            );
+        }
+        return $this->derivedKeyV2;
     }
 
-    /**
-     * Returns the current secret
-     *
-     * @return string
-     */
-    public function get_secret(): string {
-        return $this->secret;
-    }
-       
-    /**
-     * sets the new secret
-     *
-     * @param string $secret the new secret to be set
-     *
-     * @return void
-     */
-    public function set_secret(string $secret) {
-        $this->secret = $secret;
-    }
+    public function encrypt(string $input): string|false {
+        $key = $this->deriveKeyV2();
+        $iv = random_bytes(self::IV_LENGTH_V2);
+        $tag = '';
 
-    /**
-     * Decrypts a string using the application secret.
-     *
-     * @param string $input hex representation of the cipher text
-     *
-     * @return string|false UTF-8 string containing the plain text input
-     */
-    public function decrypt(string $input): string|false {
-        if (strlen($input) % 2 || ! ctype_xdigit($input)) // prevent decrypt failing when $input is not hex or has odd length
-            return false;
+        $cipherText = openssl_encrypt(
+            $input,
+            self::ENCRYPTION_ALGORITHM_V2,
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag,
+            self::VERSION,
+            self::TAG_LENGTH
+        );
 
-        $binaryInput = hex2bin($input);  // we'll need the binary cipher
-
-        if ( $binaryInput === false )
-            return false;
-
-        $iv = substr($binaryInput, 0, 16);
-        $hash = substr($binaryInput, 16, 32);
-        $cipherText = substr($binaryInput, 48);
-        $key = hash(self::$HASHING_ALGORITHM, $this->secret, true);
-
-        // if the HMAC hash doesn't match the hash string, something has gone wrong
-        if (hash_hmac(self::$HASHING_ALGORITHM, $cipherText, $key, true) !== $hash) {
+        if ($cipherText === false) {
             return false;
         }
 
-        return openssl_decrypt($cipherText, self::$ENCRYPTION_ALGORITHM, $key, OPENSSL_RAW_DATA, $iv);
+        $data = bin2hex($iv . $tag . $cipherText);
+        return self::VERSION . ':' . $data;
     }
 
-    /**
-     * Encrypts a string using the application secret. This returns a hex representation of the binary cipher text
-     *
-     * @param string $input plain text input to encrypt
-     *
-     * @return string hex representation of the binary cipher text
-     * @throws \Exception
-     */
-    public function encrypt(string $input) : string|false {
-        $key = hash(self::$HASHING_ALGORITHM, $this->secret, true);
-        $iv = random_bytes(16);
-        $cipherText = openssl_encrypt($input, self::$ENCRYPTION_ALGORITHM, $key, OPENSSL_RAW_DATA, $iv);
+    public function decrypt(string $input): string|false {
+        // Detect version by prefix
+        if (str_starts_with($input, self::VERSION . ':')) {
+            return $this->decryptV2($input);
+        }
 
-        if ( $cipherText === false )
+        // Fallback to legacy decryption
+        return $this->decryptV1($input);
+    }
+
+    private function decryptV2(string $input): string|false {
+        [$version, $hex] = explode(':', $input, 2) + [null, null];
+        if ($version !== self::VERSION || $hex === null || strlen($hex) % 2 !== 0 || !ctype_xdigit($hex)) {
             return false;
+        }
 
-        $hash = hash_hmac(self::$HASHING_ALGORITHM, $cipherText, $key, true);
-        return bin2hex($iv . $hash . $cipherText);
+        $binaryInput = hex2bin($hex);
+        if ($binaryInput === false) {
+            return false;
+        }
+
+        $iv = substr($binaryInput, 0, self::IV_LENGTH_V2);
+        $tag = substr($binaryInput, self::IV_LENGTH_V2, self::TAG_LENGTH);
+        $cipherText = substr($binaryInput, self::IV_LENGTH_V2 + self::TAG_LENGTH);
+
+        $key = $this->deriveKeyV2();
+
+        return openssl_decrypt(
+            $cipherText,
+            self::ENCRYPTION_ALGORITHM_V2,
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag,
+            $version
+        );
+    }
+
+    private function decryptV1(string $input): string|false {
+        $crypt = CryptStr_V1::instance($this->secret);
+        $result = $crypt->decrypt($input);
+        return $result;
     }
 }

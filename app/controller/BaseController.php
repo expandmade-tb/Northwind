@@ -11,7 +11,9 @@ namespace controller;
 
 use Minifier\TinyMinify;
 use helper\Helper;
+use Menu\Breadcrumb;
 use Menu\MenuBar;
+use Router\Router;
 
 class BaseController {
     protected bool $html_compress = true;
@@ -24,9 +26,11 @@ class BaseController {
             STYLESHEET.'/styles.min.css'
         ];
 
+        $breadcrumb = new Breadcrumb();
+
         $this->data['js_files'] = ["https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"];
         $this->data['menu'] = MenuBar::factory()->get('');
-
+        $this->data['breadcrumb'] = $breadcrumb->render(Router::instance()->current_uri());
         $this->data['icon'] = IMAGES.Helper::env('app_image');
         $this->data['title'] = Helper::env('app_title', 'Remote Tables');
         $this->data['notification'] = '';
