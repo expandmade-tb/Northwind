@@ -23,14 +23,13 @@ class Users extends BaseController {
         parent::__construct();
         
         $this->crud = new DbCrud(new users_model());
-        $this->crud->grid_title = '';
         $this->crud->grid_delete = '';
         $this->crud->grid_show = '';
         $this->crud->addFields('Name,Mail,AccessControl,RoleId,ValidUntil');
         $this->crud->editFields('UserId,ClientId,Name,Mail,AccessControl,RoleId,ValidUntil');
         $this->crud->gridFields('UserId,Name,Mail,ValidUntil');
         $this->crud->readonlyFields('UserId,ClientId');
-        $this->crud->setFieldProperty('ValidUntil', type: 'date');
+        $this->crud->fieldType('ValidUntil', 'date');
         $this->crud->setRelation('RoleId', 'Name', 'Roles');
         $this->crud->searchFields('Name,Mail');
 

@@ -5,12 +5,11 @@ namespace dbgrid;
 use Formbuilder\Formbuilder;
 use database\DBTable;
 use helper\Helper;
-use dbgrid\JsScript;
 use Exception;
 use Throwable;
 
 /**
- * Version 1.2.1
+ * Version 1.3.10
  * Handles the logic for building, processing, and rendering CRUD forms.
  * This class encapsulates the complex 'form' method logic from a larger CRUD class.
  */
@@ -29,10 +28,10 @@ class FormHandler {
     public mixed $callbackException;                // callback on exceptions
     public array $fieldValues;                      // the field initial values
     public array $fieldOnchange;                    // adds an ajax call to field onchange event
+    public array $fieldOninput ;                    // adds an ajax call to field oninput event
     public array $fieldDataAttr;                    // addas data attributes to a field
     public array $constraints;                      // stores a list of fields which do have depending tables ( parent -> child)
     public array $linkedTable;                      // store the controller + method to link with a button in edit mode
-    public array $datepicker;                       // fields with integrated date picker
     public array $requiredFields;                   // fields which are required on form
     public array $readonlyFields;                   // fields which are readonly on form
     public array $fieldPlaceholders;                // the field placeholders when editing form
@@ -74,6 +73,7 @@ class FormHandler {
 
         $subformRequested = (htmlspecialchars($_REQUEST["subform"] ?? '') === 'true');
         $form = new Formbuilder($this->parentCrud->model()->name(), ['action' => $formAction, 'wrapper' => $wrapper]);
+        $form->set_secrets(Helper::env('app_secret', 'empty_secret'), Helper::env('app_identifier','empty_identifier'));
         $disabledMainForm = $subformRequested === true ? 'disabled' : '';
         $form->fieldset_open('', $disabledMainForm);
         $form->date_format = $this->parentCrud->date_fmt;
@@ -120,9 +120,7 @@ class FormHandler {
             $subformHtml = '<div>' . call_user_func($this->subform['callback'], $id) . '</div>';
         }
 
-        $this->addDatepickerScripts();
-
-        return '<div id="dbc-container">' . $form->render() . $subformHtml . '</div>' . JsScript::instance()->generate();
+        return '<div id="dbc-container">' . $form->render() . $subformHtml . '</div>';
     }
 
     /**
@@ -181,7 +179,7 @@ class FormHandler {
                 case 'search':
                     $constraint = $this->parentCrud->getFieldProperty($field, 'constraint');
 
-                    if ($constraint === true) {
+                    if (! empty($constraint) ) {
                         $form->rule([$this, 'check_relation'], $field);
                     }
 
@@ -336,15 +334,14 @@ class FormHandler {
      */
     private function renderFormElements(Formbuilder $form, string $action, array $fields, $rowData): void {
         foreach ($fields as $field) {
-            $meta = $this->parentCrud->getFieldProperty($field);
+            $meta = $this->parentCrud->getFieldProperties($field);
             $label = $this->parentCrud->get_field_title($field);
             $placeholder = $this->fieldPlaceholders[$field] ?? ''; 
             $value = $this->getFieldValue($field, $rowData);
             $readonly = $this->getFieldReadonlyStatus($field, $action);
-            $onchange = $this->getFieldOnchangeAttribute($field);
             $data = $this->getFieldDataAttributes($field);
 
-            $this->buildFormField($form, $field, $meta, $label, $value, $readonly, $placeholder, $onchange, $data);
+            $this->buildFormField($form, $field, $meta, $label, $value, $readonly, $placeholder, $data);
         }
     }
 
@@ -410,35 +407,6 @@ class FormHandler {
     }
 
     /**
-     * Generates the `onchange` HTML attribute string for a field if it has
-     * an associated onchange event configuration. This includes setting up
-     * JavaScript variables for the client-side `form_field_onchange` function.
-     *
-     * @param string $field The name of the field.
-     * @return string The `onchange` attribute string (e.g., ' onchange="..."') or an empty string.
-     * @throws Exception If an onchange mapping cannot be encoded to JSON.
-     */
-    private function getFieldOnchangeAttribute(string $field): string {
-        if (!empty($this->fieldOnchange[$field])) {
-            $jsencoded = json_encode($this->fieldOnchange[$field]['mapping']);
-
-            if ($jsencoded === false) {
-                throw new Exception("onchange mapping for field '$field' cannot be encoded.");
-            }
-
-            if ( ! isset($this->fieldDataAttr[$field]['mapping']) )
-                $this->fieldDataAttr[$field]['mapping'] = $jsencoded;
-
-            if ( ! isset($this->fieldDataAttr[$field]['token']) )
-                $this->fieldDataAttr[$field]['token'] = $this->fieldOnchange[$field]['token'];
-
-
-            return " onchange=\"form_field_onchange(this)\"";
-        }
-        return '';
-    }
-
-    /**
      * Builds and adds a specific form field (e.g., text, date, select, textarea, etc.)
      * to the Formbuilder instance based on its defined type.
      *
@@ -449,13 +417,15 @@ class FormHandler {
      * @param string $value The initial value for the form field.
      * @param string $readonly The 'readonly' attribute string if applicable.
      * @param string $placeholder The 'placeholder' attribute string if applicable.
-     * @param string $onchange The 'onchange' attribute string if applicable.
      * @param string $data The 'data' attributes string if applicable.
      * @throws Exception If a problem occurs during field processing (e.g., JSON encoding for grid).
      */
-    private function buildFormField(Formbuilder $form, string $field,  array $fieldMeta, string $label, string $value, string $readonly, string $placeholder, string $onchange, string $data): void {
-        $commonString = trim($readonly . (!empty($placeholder) ? ' placeholder="' . htmlspecialchars($placeholder) . '"' : '') . $onchange . $data);
-        $options = ['label' => $label, 'string' => $commonString, 'value' => $value];
+    private function buildFormField(Formbuilder $form, string $field,  array $fieldMeta, string $label, string $value, string $readonly, string $placeholder, string $data): void {
+        $commonString = trim($readonly . (!empty($placeholder) ? ' placeholder="' . htmlspecialchars($placeholder) . '"' : '') . $data);
+        $datepicker = $fieldMeta['datepicker'] ?? '';
+        $onchange = (object) ($this->fieldOnchange[$field] ?? null);
+        $oninput = (object) ($this->fieldOninput[$field] ?? null);
+        $options = ['label' => $label, 'string' => $commonString, 'value' => $value, 'datepicker' => $datepicker];
         $fieldType = $fieldMeta['type'] ?? ''; 
 
         switch ($fieldType) {
@@ -493,17 +463,25 @@ class FormHandler {
                 $form->textarea($field, array_merge($options, ['rows' => $rows, 'cols' => $cols]));
                 break;
             case 'checkbox':
-                $values = explode(',', $fieldMeta['values']) ?? []; ;
+                $values = explode(',', $fieldMeta['values'] ?? '');
                 $checked = (array_search($value, $values) == 1);
                 $form->checkbox($field, ['label' => $label, 'checked' => $checked, 'string' => trim($readonly . $data)]);
                 break;
             case 'select':
                 $selectValues = $fieldMeta['values'] ?? []; 
-                $form->select($field, $selectValues, array_merge($options, ['value' => $value]));
+
+                $form->when($oninput, fn($f) => $f->oninput($oninput->method))
+                      ->when($onchange, fn($f) => $f->onchange($onchange->method, $onchange->mapping, $onchange->defer))
+                      ->select($field, $selectValues, array_merge($options, ['value' => $value]));
+                      
                 break;
             case 'datalist':
                 $datalistValues = $fieldMeta['values'] ?? [];
-                $form->datalist($field, $datalistValues, array_merge($options, ['value' => $value]));
+
+                $form->when($oninput, fn($f) => $f->oninput($oninput->method))
+                      ->when($onchange, fn($f) => $f->onchange($onchange->method, $onchange->mapping, $onchange->defer))
+                      ->datalist($field, $datalistValues, array_merge($options, ['value' => $value]));
+                
                 break;
             case 'relation':
                 $relTable = $fieldMeta['rel_table'] ?? '';
@@ -533,7 +511,10 @@ class FormHandler {
                     $value = '';
                 }
 
-                $form->search($field, array_merge($options, ['value' => $value]), "searchrelationResults(this)");
+                $form->when($oninput, fn($f) => $f->oninput($oninput->method))
+                      ->when($onchange, fn($f) => $f->onchange($onchange->method, $onchange->mapping, $onchange->defer))
+                      ->search($field, array_merge($options, ['value' => $value]));
+                    
                 break;
             case 'grid':
                 $gridValues = json_decode($value, true);
@@ -549,16 +530,19 @@ class FormHandler {
                 if (!empty($readonly)) {
                     for ($r = 0; $r < $rows; $r++) {
                         for ($c = 0; $c < $cols; $c++) {
-                            $gridString[$r][$c] = trim($readonly . (!empty($placeholder) ? ' placeholder="' . htmlspecialchars($placeholder) . '"' : '') . $onchange . $data);
+                            $gridString[$r][$c] = trim($readonly . (!empty($placeholder) ? ' placeholder="' . htmlspecialchars($placeholder) . '"' : '') . $data);
                         }
                     }
                 }
 
                 $form->grid($field, ['label' => $label, 'value' => $gridValues, 'rows' => $rows, 'cols' => $cols, 'string' => $gridString]);
                 break;
-            default:
-                $form->text($field, $options);
-                break;
+        default:
+            $form->when($oninput, fn($f) => $f->oninput($oninput->method))
+                 ->when($onchange, fn($f) => $f->onchange($onchange->method, $onchange->mapping, $onchange->defer))
+                 ->text($field, $options);
+        
+            break;
         }
     }
 
@@ -651,22 +635,6 @@ class FormHandler {
         }
 
         $form->button_bar($btnBarNames, $btnBarValues, $btnBarOnclicks, $btnBarTypes, $btnBarStrings);
-    }
-
-    /**
-     * Adds JavaScript snippets to initialize datepickers based on configurations.
-     * Assumes a global `JsScript` instance is available.
-     */
-    private function addDatepickerScripts(): void {
-        if (!empty($this->datepicker)) {
-            $js = JsScript::instance();
-
-            foreach ($this->datepicker as $field => $opts) {
-                $format = $opts['format'] ?? '';
-                $lang = $opts['lang'] ?? '';
-                $js->add_var("Datepicker('#$field','$format','$lang')");
-            }
-        }
     }
 
     public function check_relation(string $value, string $field) : string {

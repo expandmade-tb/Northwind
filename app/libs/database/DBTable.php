@@ -4,7 +4,7 @@ namespace database;
 
 /**
  * implementation class of interface IDBTable
- * Version 1.9.3
+ * Version 1.9.4
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -314,7 +314,6 @@ class DBTable {
      */
     public static function getSQL( string $filename ) : string|false {
         $parts = pathinfo($filename);
-	    /* @phpstan-ignore-next-line (ullCoalesce.offset) */
         $fdir = (($parts['dirname']??'.') == '.') ? APP . '/sql' : $parts['dirname']??'.'; 
         $fname = (empty($parts['extension']) == true) ? $parts['filename'] . '.sql' : $parts['basename'];
 

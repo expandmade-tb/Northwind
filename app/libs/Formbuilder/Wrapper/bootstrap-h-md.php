@@ -131,7 +131,7 @@ return [
         <label for="[:name]" class="col-md-2 col-form-label">[:label]</label>
         <div class="col-md-8">
             <div class="input-group">
-                <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes] oninput="">
+                <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes]>
                 <div class="input-group-prepend">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                 </div>            

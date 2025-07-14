@@ -28,7 +28,7 @@ return [
     </div>',
     'search' =>
     '<div class="form-floating mb-3">
-        <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes] placeholder="[:name]" oninput="">
+        <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes] placeholder="[:name]">
         <label for="[:name]"><i class="bi bi-search">&nbsp;</i>[:label]</label>
         <ul class="dropdown-menu" id="[:id]-results" style="display:none">
             <li class="dropdown-item">?</li>

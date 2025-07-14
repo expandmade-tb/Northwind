@@ -2,7 +2,7 @@
 
 /**
  * CRUD for database tables
- * Version 1.26.1
+ * Version 1.27.0
  * Author: expandmade / TB
  * Author URI: https://expandmade.com
  */
@@ -12,7 +12,6 @@ namespace dbgrid;
 use database\DBTable;
 use Exception;
 use InvalidArgumentException;
-use Formbuilder\StatelessCSRF;
 use helper\Helper;
 
 class DbCrud {
@@ -35,7 +34,6 @@ class DbCrud {
 
     protected DBTable $table;                       // database table we are using
     protected FormHandler $formHandler;
-    protected string $echo_data = '';               // data to be returned instead of echo
     protected array $field_titles;                  // titles / headers for fields
     protected array $field_types;                   // the field property / value pairs
     protected array $grid_fields;                   // fields to show in grid
@@ -47,6 +45,9 @@ class DbCrud {
     protected bool $encode_identifier = false;
     protected mixed $callback_delete;
 
+    /**
+     * Constructor initializes the DBTable instance and default field types.
+     */
     public function __construct(DBTable $table) {
         $this->table = $table;
         $this->grid_title = $table->name();
@@ -78,31 +79,49 @@ class DbCrud {
         }
     }
     
+    /**
+     * Defines the fields to be used in add forms.
+     */
     public function addFields (string $fields) : DbCrud {
         $this->formHandler->addFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
+    /**
+     * Defines the fields to be used in edit forms.
+     */
     public function editFields (string $fields) : DbCrud {
         $this->formHandler->editFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
+    /**
+     * Defines the fields to be used in read-only forms.
+     */
     public function readFields (string $fields) : DbCrud {
         $this->formHandler->readFields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
+    /**
+     * Defines the fields to be displayed in the grid view.
+     */
     public function gridFields (string $fields) : DbCrud {
         $this->grid_fields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
+    /**
+     * Defines which fields are searchable via the search box.
+     */
     public function searchFields (string $fields) : DbCrud {
         $this->search_fields = array_map('trim',explode(',', $fields));
         return $this;
     }
 
+    /**
+     * Defines specific fields as readonly in forms.
+     */
     public function readonlyFields (string $fields) : DbCrud {
         foreach (array_map('trim',explode(',', $fields)) as $key => $value)
             $this->formHandler->readonlyFields[$value] = $key;
@@ -110,6 +129,9 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Defines specific fields as required in forms.
+     */
     public function requiredFields (string $fields) : DbCrud {
         foreach (array_map('trim',explode(',', $fields)) as $key => $value)
             $this->formHandler->requiredFields[$value] = $key;
@@ -117,6 +139,9 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Assigns a placeholder text for a form field.
+     */
     public function fieldPlaceholder (string $field, string $placeholder) : DbCrud {
         $this->formHandler->fieldPlaceholders[$field] = $placeholder;
         return $this;
@@ -141,7 +166,7 @@ class DbCrud {
     }
 
     /**
-     *  sets field properties
+     * Sets multiple properties for a field, such as type, values, etc.
      * 
      *  @param string $field the fields name
      *  @param string $config. current valid properties are:
@@ -190,33 +215,52 @@ class DbCrud {
     }
     
     /**
-     *  gets field properties
+     * Retrieves a single property of a given field.
      * 
-     *  @param string $property. current valid properties are:
-     *                'relation', 'search', 'text', 'integer', 'numeric', 'checkbox', 'select',
-     *       '         date', 'datetext', 'datetime', 'datalist', 'textarea', 'timetext', 'grid'
-     * 
-     *  @param string $value the property possible value. (a value list is comma separated)
+     *  @param string $field the field name
+     *  @param string $property. the property to retrieve
      */
-     public function getFieldProperty(string $field, string $property=''): mixed {
-        if ( empty($property) )
-            return $this->field_types[$field] ?? [];
-         
+    public function getFieldProperty(string $field, string $property) : string {
         return $this->field_types[$field][$property] ?? '';
     }
     
+    /**
+     * Retrieves all configured properties of a given field.
+     * 
+     *  @param string $field the field name
+     */
+    public function getFieldProperties(string $field) : array {
+        return $this->field_types[$field] ?? [];
+    }
+    
+    /**
+     * Sets a static value for a specific field.
+     */
     public function fieldValue (string $field, string $value) : DbCrud{
         $this->formHandler->fieldValues[$field] = $value;
         return $this;
     }
 
-    public function fieldOnChange(string $field, string $rel_table, array $mapping) : DbCrud {
-        $this->fieldDataAttr($field, mapping: json_encode($mapping), method: $rel_table, token: $this->token());
-        JsScript::instance()->add_script('onchange');
+    /**
+     * Registers a JavaScript onchange handler for a field, with optional mapping and defer flag.
+     */
+    public function fieldOnchange(string $field, string $method, array $mapping, bool $defer=false) : DbCrud {
+        $this->formHandler->fieldOnchange[$field] = ['method'=>$method, 'mapping'=>$mapping, 'defer' => $defer];
         return $this;
     }
 
-    public function fieldDataAttr(string $field, ...$data) : DbCrud {
+    /**
+     * Registers a JavaScript oninput handler for a field.
+     */
+    public function fieldOninput(string $field, string $method) : DbCrud {
+        $this->formHandler->fieldOninput[$field] = ['method'=>$method];
+        return $this;
+    }
+
+    /**
+     * Attaches custom data attributes to a form field.
+     */
+    public function fieldDataAttr(string $field, mixed ...$data) : DbCrud {
         foreach ($data as $attr => $value) {
             $this->formHandler->fieldDataAttr[$field][$attr] = $value;
         }
@@ -224,6 +268,9 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Assigns display titles to fields, optionally mapping custom titles.
+     */
     public function fieldTitles (string $fields, string $titles='') : DbCrud {
         $afields = explode(',', $fields);
 
@@ -245,6 +292,9 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Bulk sets field usage across add/edit/read/grid and assigns default titles.
+     */
     public function fields (string $fields) : DbCrud {
         $this->addFields($fields);
         $this->editFields($fields);
@@ -255,13 +305,20 @@ class DbCrud {
         return $this;
     }
 
-    public function setDatepicker (string $field, string $format='yyyy-mm-dd', string $lang='en') : DbCrud {
-        $this->formHandler->datepicker[$field] = ['format'=>$format, 'lang'=>$lang];
-        JsScript::instance()->add_script('datepicker', 'before');
-        JsScript::instance()->add_css('datepicker');
+    /**
+     * Enables a datepicker widget for a specific field.
+     */
+    public function setDatepicker (string $field, string $format='yyyy-mm-dd', string $type='text') : DbCrud {
+        $this->setRule('field', 'date');
+        $defined_type = $this->getFieldProperty($field, 'type'); // make sure there isnt already a type defined
+        $type = empty($defined_type) ? $type : $defined_type;
+        $this->setFieldProperty($field, type: $type, datepicker: $format);
         return $this;
     }
 
+    /**
+     * Defines a relation for a field to another table's field.
+     */
     public function setRelation(string $field, string $relatedField, string $relatedTable) : DbCrud {
         $this->setFieldProperty($field, type: 'relation', rel_table: $relatedTable, rel_field: $relatedField);
         return $this;
@@ -271,22 +328,30 @@ class DbCrud {
     * @deprecated deprecated, use fieldType instead
     */
     public function setGrid(string $field, int $rows, int $cols) : DbCrud {
-        $this->setFieldProperty($field, type: 'grid', rows: $rows, cols: $cols);
+        $this->setFieldProperty($field, type: 'grid', rows: (string)$rows, cols: (string)$cols);
         return $this;
     }
 
+    /**
+     * Defines a live search for a field
+     */
     public function setSearchRelation(string $field, string $relatedTable, string $relatedField, bool $constraint=true) : DbCrud {
-        $this->setFieldProperty($field, type: 'search', rel_table: $relatedTable, rel_field: $relatedField, constraint: $constraint);
-        $this->fieldDataAttr($field, method: $relatedTable, token: $this->token(), deferred: 'onchange');
-        JsScript::instance()->add_script('searchrelation');
+        $this->setFieldProperty($field, type: 'search', rel_table: $relatedTable, rel_field: $relatedField, constraint: (string)$constraint);
+        $this->fieldOninput($field, "{$relatedTable}Oninput");
         return $this;
     }
 
+    /**
+     * Registers a custom callback to format a field's value in grid view.
+     */
     public function formatField(string $field, callable $callable) : DbCrud {
         $this->callback_fields[$field] = $callable;
         return $this;
     }
 
+    /**
+     * Attaches a linked table controller with a button to open it.
+     */
     public function linkedTable(string $controller, string $button_value, string $method='index') : DbCrud {
         unset($this->linked_table);
         $this->formHandler->linkedTable['controller'] = $controller;
@@ -295,6 +360,9 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Adds a subform rendered through a callback method and shown via a button.
+     */
     public function subForm(callable $controller, string $button_value) : DbCrud {
         unset($this->subform);
         $this->formHandler->subform['callback'] = $controller;
@@ -302,35 +370,59 @@ class DbCrud {
         return $this;
     }
 
+    /**
+     * Registers an exception handler callback for form actions.
+     */
     public function onException(callable $callback) : DbCrud {
         $this->formHandler->callbackException = $callback;
         return $this;
     }
 
+    /**
+     * Manually defines the form layout grid using row/column schema.
+     */
     public function layout_grid(array $rows) : DbCrud {
         $this->formHandler->rows = $rows;
         return $this;
     }
 
+    /**
+     * Adds dependency constraints to a field (used for conditional filtering).
+     */
     public function setContstraints(string $field, string $depending_table, string $depending_field) : DbCrud {
         $this->formHandler->constraints[$field][] = ['table'=>$depending_table,  'field'=>$depending_field];
         return $this;
     }
 
+    /**
+     * Replaces the default SQL used for fetching grid data.
+     */
     public function gridSQL (string $sql, ?array $params=null ) : DbCrud {
         $this->grid_sql = $sql;
         $this->grid_sql_params = $params;
         return $this;
     }
 
+    /**
+     * Renders the grid view for the current table with pagination and sorting.
+     */
     public function grid (int $page=1, string $orderby='') : string {
         if ( empty($orderby) && !empty($_REQUEST['orderby']) )
             $orderby = $_REQUEST['orderby'];
 
+        ob_start();
         $this->show_grid($page, $orderby);
-        return '<div id="dbc-container">'.$this->echo_data.'</div>';
+        $html = ob_get_clean();
+
+        if ( $html === false )
+            $html = 'error';
+
+        return '<div id="dbc-container">' . $html . '</div>';
     }
 
+    /**
+     * Renders a form for add/edit/show actions based on the route action and optional record ID.
+     */
     public function form(string $action, string $id='', string $msg='', string $wrapper='') : string {
         return $this->formHandler->handle($action, $id, $msg, $wrapper);
     }
@@ -364,56 +456,92 @@ class DbCrud {
             return false;
     }
 
+    /**
+     * Clears the current search and redirects to the default grid view.
+     */
     public function clear() : void {
         $to = '/'.$this->get_uri('class');
         Helper::redirect("$to/grid/1");
     }
 
+    /**
+     * Adds a validation rule (function or method name) to a field.
+     */
     public function setRule(string $field, string|callable $callback) : DbCrud {
         $this->formHandler->callbackRules[$field] = $callback;
         return $this;
     }
 
+    /**
+     * Registers a custom callback for update operations.
+     */
     public function callbackUpdate(callable $callback) : DbCrud {
         $this->formHandler->callbackUpdate = $callback;
         return $this;
     }
 
+    /**
+     * Registers a custom callback for insert operations.
+     */
     public function callbackInsert(callable $callback) : DbCrud {
         $this->formHandler->callbackInsert = $callback;
         return $this;
     }
 
+    /**
+     * Registers a custom callback for delete operations.
+     */
     public function callbackDelete (callable $callback) : DbCrud {
         $this->callback_delete = $callback;
         return $this;
     }
 
+    /**
+     * Returns the current table model.
+     */
     public function model() : DBTable {
         return $this->table;
     }
 
+    /**
+     * Enables/disables encoding of row identifiers.
+     */
     public function encode_identifier (bool $encode = true) : DbCrud {
         $this->encode_identifier = $encode;
         return $this;
     }
 
+    /**
+     * Returns the number of rows in the current grid query.
+     */
     public function rowcount () : int {
         return $this->table->count($this->grid_sql, $this->grid_sql_params);
     }
 
+    /**
+     * Returns a specific segment of the current URI (e.g., class, method, id).
+     */
     public function get_uri(string $part) : string { //new
         return $this->uri[$part] ?? '';
     }
 
+    /**
+     * Returns the title for a given field.
+     */
     public function get_field_title(string $field) : string {
         return $this->field_titles[$field] ?? ''; 
     }
 
+    /**
+     * Returns the field formatting callback, if any.
+     */
     public function get_callback_field(string $field) : callable | null {
         return $this->callback_fields[$field] ?? null;
     }
 
+    /**
+     * Returns the primary key name for the current model.
+     */
     public function get_primary_key() : string {
         return $this->primaryKey;
     }
@@ -422,8 +550,8 @@ class DbCrud {
         $offset = ($page - 1) * $this->limit;
 
         // headerbar
-        $this->echo_data .= $this->headerbar();
-        $this->echo_data .= $this->grid_info;
+        $this->headerbar();
+        echo $this->grid_info;
 
         $this->gridSearch();
         $total_rows = $this->rowcount();
@@ -448,11 +576,11 @@ class DbCrud {
         $grid_delete = str_replace('[:script_name]', $uri, $this->grid_delete);
 
         // --> start grid table 
-        $this->echo_data .= '<table class="table table-bordered table-hover dbc-table">';
+        echo '<table class="table table-bordered table-hover dbc-table">';
 
         // --> grid table header titles
         if ( $this->show_titles ) {
-            $this->echo_data .= '<thead><tr>';
+            echo '<thead><tr>';
 
             foreach ($this->grid_fields as $key => $field) {
                 $marker = (in_array($field, $this->search_fields??[]) === true) ? '&nbsp;<i class="bi bi-search"></i>' : '';
@@ -460,19 +588,19 @@ class DbCrud {
                 $sort = ($field === $orderby) ? '<i class="bi bi-sort-alpha-down">&nbsp;</i>' : '';
                 $link = '/' . $this->get_uri('class') . $this->query('orderby', $field);
                 $html = '<span class="page-item"><a class="page-link" href="' . $link . '">' . $sort . $title . $marker . '</a></span>';
-                $this->echo_data .= "<th>$html</th>";
+                echo "<th>$html</th>";
             }
 
             if ( !empty($grid_show.$grid_edit.$grid_delete) )
-                $this->echo_data .= '<th>Actions</th>';
+                echo '<th>Actions</th>';
                 
-            $this->echo_data .= '</tr></thead>';
+            echo '</tr></thead>';
         }
         // <-- grid table header titles
 
         foreach ($data as $row => $column) {
             // --> grid table rows
-            $this->echo_data .= '<tr>';
+            echo '<tr>';
 
             foreach ($this->grid_fields as $key => $field) {
                 $value = $column[$field];
@@ -497,7 +625,7 @@ class DbCrud {
                     case 'checkbox':
                         // booleans can be stored in db as 0|1, false|true, off|on, -|+, no|yes etc
                         // where array[0] represents false, array[1] represents true
-                        $values = explode(',',$this->getFieldProperty($field, 'values'));
+                        $values = explode(',', $this->getFieldProperty($field, 'values'));
 
                         if ( array_search($value, $values) == 1)
                             $checked = 'checked';
@@ -511,7 +639,7 @@ class DbCrud {
                 if ( !is_null($this->get_callback_field($field)) )
                     $value = call_user_func($this->get_callback_field($field), 'grid', $value, $column);
 
-                $this->echo_data .= "<td>$value</td>";
+                echo "<td>$value</td>";
             }
 
             if ( $this->encode_identifier ) 
@@ -520,18 +648,18 @@ class DbCrud {
                 $id = $column['row_identifier']??'';
           
             $actioncolumn = str_replace('[:identifier]', "{$id}{$query}", '<div class="d-flex flex-row  mb-3">'."$grid_show$grid_edit$grid_delete".'</div>');
-            $this->echo_data .= "<td>$actioncolumn</td>";
+            echo "<td>$actioncolumn</td>";
 
-            $this->echo_data .= '</tr>';
+            echo '</tr>';
             // <-- grid table rows
         }
  
         // <-- end gridtable
         
-        $this->echo_data .= '</table>';
+        echo '</table>';
 
         // footerbar
-        $this->echo_data .= $this->footerbar($page, $total_pages);
+        $this->footerbar($page, $total_pages);
     }
 
     protected function current_uri() : array {
@@ -575,14 +703,12 @@ class DbCrud {
         return true;
     }
     
-    protected function headerbar() : string {  
-        $html = '';
-
+    protected function headerbar() : void {  
         if ( !empty($this->grid_title) )
-            $html .= '<h4 class="dbc-title">'.$this->grid_title.'</h4>';
+            echo '<h4 class="dbc-title">'.$this->grid_title.'</h4>';
 
         if ( empty($this->grid_add) && empty($this->grid_search) )
-            return $html;
+            return;
 
         if ( isset ($_REQUEST["search_submit"]) ) {
             $search = $_REQUEST["search"]??'';
@@ -593,77 +719,66 @@ class DbCrud {
             else
                 Helper::redirect("$to/grid/1".$this->query('search', $search));
 
-            return '';
+            return;
         }
         else 
             $search = $_REQUEST["search"]??'';
 
         $uri = '/'.$this->get_uri('class');
-        $html .= '<table class="table table-bordered table-hover dbc-headerbar"><tr>';
+        echo '<table class="table table-bordered table-hover dbc-headerbar"><tr>';
 
         if ( !empty($this->grid_add) ) {
             $grid_add = str_replace('[:script_name]', $uri, $this->grid_add);
-            $html .= '<td>'.$grid_add.'</td>';
+            echo '<td>'.$grid_add.'</td>';
         }
 
         if ( !empty($this->grid_search) ) {
             $this->grid_search = str_replace(['[:script_name]','[:search]'], [$uri, $search], $this->grid_search);
-            $html .= '<td>'.$this->grid_search.'</td>';
+            echo '<td>'.$this->grid_search.'</td>';
         }
     
-        $html .= '</tr></table>';
-
-        return $html;
+        echo '</tr></table>';
     }
 
-    protected function footerbar(int $current_page, int $total_pages, int $max_pages=5) :string {
+    protected function footerbar(int $current_page, int $total_pages, int $max_pages=5) : void {
         if ( $total_pages == 1 )
-            return '';
+            return;
         
         $query = $this->query('search', $_REQUEST["search"]??'');
-        $html = '<div class="dbc-footerbar">';
+        echo '<div class="dbc-footerbar">';
         $c = $current_page - 1;
         $c = max(1, $c);
         $min = (intdiv($c, $max_pages) * $max_pages) + 1;  
         $max = (intdiv(($c + 5), $max_pages) * $max_pages) + 1;  
         $max = min($max, $total_pages + 1);
         $uri = '/'.$this->get_uri('class');
-        $html .= '<nav aria-label="Page navigation"><ul class="pagination">';
+        echo '<nav aria-label="Page navigation"><ul class="pagination">';
 
         if ( $min > $max_pages ) {
             $page = $min - 1;
             $link = $uri . "/grid/1{$query}";
-            $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">First</a></li>';
+            echo '<li class="page-item"><a class="page-link" href="'.$link.'">First</a></li>';
             $link = $uri . "/grid/{$page}{$query}";
-            $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">Previous</a></li>&nbsp';
+            echo '<li class="page-item"><a class="page-link" href="'.$link.'">Previous</a></li>&nbsp';
         }
 
         for ($i=$min; $i < $max; $i++) { 
             $link = $uri . "/grid/{$i}{$query}";
 
             if ( $i == $current_page )
-                $html .= '<li class="page-item active" aria-current="page"><a class="page-link" href="'.$link.'">'.$i.'</a></li> ';
+                echo '<li class="page-item active" aria-current="page"><a class="page-link" href="'.$link.'">'.$i.'</a></li> ';
             else 
-                $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">'.$i.'</a></li>';
+                echo '<li class="page-item"><a class="page-link" href="'.$link.'">'.$i.'</a></li>';
         }
 
         if ( $max < $total_pages ) {
             $link = $uri . "/grid/{$max}{$query}";
-            $html .= '&nbsp<li class="page-item"><a class="page-link" href="'.$link.'">Next</a></li>';
+            echo '&nbsp<li class="page-item"><a class="page-link" href="'.$link.'">Next</a></li>';
             $link = $uri . "/grid/{$total_pages}{$query}";
-            $html .= '<li class="page-item"><a class="page-link" href="'.$link.'">Last</a></li>';
+            echo '<li class="page-item"><a class="page-link" href="'.$link.'">Last</a></li>';
         }
 
-        $html .= '</ul></nav></div>';
-        return $html;
-    }
-
-    public function token() : string {
-        $csrf_generator = new StatelessCSRF(Helper::env('app_secret', 'empty_secret'));
-        $csrf_generator->setGlueData('ip', $_SERVER['REMOTE_ADDR']);
-        $csrf_generator->setGlueData('user-agent', $_SERVER['HTTP_USER_AGENT']);            
-        $token = $csrf_generator->getToken(Helper::env('app_identifier','empty_identifier'), time() + 900); // valid for 15 mins.           
-        return $token;
+        echo '</ul></nav></div>';
     }
 
     public function base64url_encode(string $string_value) : string {

@@ -9,6 +9,7 @@ class Orders extends CrudController {
 
     function __construct() {
         parent::__construct();
+        $this->html_compress = false;
         $this->crud = new DbCrud(new orders_model());
         $this->crud->grid_title = '';
         $this->crud->grid_show = '';
@@ -23,18 +24,19 @@ class Orders extends CrudController {
         $this->crud->setRelation('EmployeeID', 'LastName', 'Employees');
         $this->crud->setRelation('ShipVia', 'CompanyName', 'Shippers');
         $this->crud->setSearchRelation('CustomerID', 'Customers', 'CompanyName');
-        $this->crud->setRule('OrderDate','date');
-        $this->crud->setRule('RequiredDate','date');
-        $this->crud->setRule('ShippedDate','date');
         $this->crud->setDatepicker('OrderDate');
         $this->crud->setDatepicker('RequiredDate');
         $this->crud->setDatepicker('ShippedDate');
         $this->crud->linkedTable('OrderDetails', 'Details', 'selectorder');
 
-        $this->crud->fieldOnChange('CustomerID', 'Customers', 
-            ['CompanyName'=>'ShipName', 'Address'=>'ShipAddress','City'=>'ShipCity','Region'=>'ShipRegion',
-             'PostalCode'=>'ShipPostalCode','Country'=>'ShipCountry',]);
+        $this->crud->fieldOnchange('CustomerID', 'CustomersOnchange', 
+            ['CompanyName'=>'ShipName',
+             'Address'=>'ShipAddress',
+             'City'=>'ShipCity',
+             'Region'=>'ShipRegion',
+             'PostalCode'=>'ShipPostalCode',
+             'Country'=>'ShipCountry'], true);
         
-            $this->crud->layout_grid(['OrderID,CustomerID','EmployeeID','OrderDate,','ShippedDate,RequiredDate','ShipVia,Freight','ShipName,ShipAddress','ShipCity,ShipRegion','ShipPostalCode,ShipCountry']);
+        $this->crud->layout_grid(['OrderID,CustomerID','EmployeeID','OrderDate,','ShippedDate,RequiredDate','ShipVia,Freight','ShipName,ShipAddress','ShipCity,ShipRegion','ShipPostalCode,ShipCountry']);
     }
 }

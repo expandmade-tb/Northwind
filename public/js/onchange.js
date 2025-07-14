@@ -1,5 +1,5 @@
 function form_field_onchange(src, event="onchange"){
-    if ( src.dataset.deferred === event )
+    if ( src.dataset.deferOnchange === event )
         return;
 
     let value = src.value;
@@ -8,7 +8,7 @@ function form_field_onchange(src, event="onchange"){
         return;
 
     var xhr = new XMLHttpRequest();
-    var url = '/' + src.form.dataset.controller + '/' + src.dataset.method + 'Onchange' + '?changed_value=' + encodeURIComponent(value);
+    var url = '/' + src.form.dataset.controller + '/' + src.dataset.methodOnchange + '?changed_value=' + encodeURIComponent(value);
     var token = src.dataset.token;
     xhr.open('GET', url, true);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -17,7 +17,7 @@ function form_field_onchange(src, event="onchange"){
     xhr.onreadystatechange = function(){
         if(xhr.readyState == 4 && xhr.status == 200){
             var data = JSON.parse(xhr.responseText);
-            var map = JSON.parse(src.dataset.mapping);
+            var map = JSON.parse(src.dataset.mappingOnchange);
 
             for (const [key, value] of Object.entries(map)) { // map result values to form fields
                 let result = data[key];

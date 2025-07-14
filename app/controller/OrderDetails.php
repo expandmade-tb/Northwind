@@ -14,8 +14,6 @@ class OrderDetails extends BaseController {
 
     function __construct() {
         parent::__construct();
-        $this->data['js_files'][] = JAVASCRIPT.'/livesearch.js';
-       
         $this->crud = new DbCrud(new orderdetails_model());
         $this->crud->grid_title = '';
         $this->crud->grid_show = '';

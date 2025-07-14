@@ -217,7 +217,6 @@ class DBView {
      */
     public static function getSQL( string $filename ) : string|false {
         $parts = pathinfo($filename);
-	    /* @phpstan-ignore-next-line (ullCoalesce.offset) */
         $fdir = (($parts['dirname']??'.') == '.') ? APP . '/sql' : $parts['dirname']??'.'; 
         $fname = (empty($parts['extension']) == true) ? $parts['filename'] . '.sql' : $parts['basename'];
 

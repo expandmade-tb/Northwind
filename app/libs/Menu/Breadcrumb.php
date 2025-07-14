@@ -21,7 +21,15 @@ class Breadcrumb {
       $this->path = [];
 
       // Normalize path → extract controller (first segment)
-      $segments = explode('/', parse_url($currentPath, PHP_URL_PATH));
+      $path = parse_url($currentPath, PHP_URL_PATH);
+
+      if ($path !== false && $path !== null) {
+          $segments = explode('/', $path);
+      } else {
+          // Handle the error or set $segments to an empty array
+          $segments = [];
+      }
+      
       $base = '/' . ($segments[1] ?? '');
 
       // Try to find the path in the menu

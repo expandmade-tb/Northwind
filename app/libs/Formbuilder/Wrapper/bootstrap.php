@@ -98,7 +98,7 @@ return [
     'search' =>
     '<div class="mb-3">
         <label for="[:name]" class="form-label">[:label]</label>
-            <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes] oninput="">
+            <input type="text" name="[:name]" id="[:id]" value="[:value]" [:class-ovwr] class="form-control" [:attributes]>
             <ul class="dropdown-menu" id="[:id]-results" style="display:none">
                 <li class="dropdown-item">?</li>
             </ul>
